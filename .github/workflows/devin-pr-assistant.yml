@@ -19,7 +19,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
 
     steps:
       - name: Prepare Devin prompt
@@ -27,6 +27,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           CUSTOM_INSTRUCTIONS: ${{ github.event.inputs.instructions }}
+          DEVIN_GITHUB_TOKEN: ${{ secrets.DEVIN_GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.inputs.pr_number }}
         with:
           script: |
@@ -66,6 +67,11 @@ jobs:
               return;
             }
 
+            if (!process.env.DEVIN_GITHUB_TOKEN) {
+              core.setFailed('DEVIN_GITHUB_TOKEN repository secret is required.');
+              return;
+            }
+
             const prompt = [
               `Repository: ${context.repo.owner}/${context.repo.repo}`,
               `Pull request: #${pr.number} - ${pr.title}`,
@@ -76,7 +82,10 @@ jobs:
               `Head SHA: ${pr.head.sha}`,
               `Triggered by: @${context.actor}`,
               '',
-              'Work directly on this open PR. Review the PR diff and context, follow the custom instructions below, push any necessary commits to the PR branch if permitted, and comment on the PR with a concise summary when finished.',
+              'Work directly on this open PR. Start by checking out the PR branch with GitHub CLI:',
+              `gh pr checkout ${pr.number} --repo ${context.repo.owner}/${context.repo.repo}`,
+              '',
+              'A GitHub token is available as GITHUB_TOKEN for gh/API operations. Verify gh auth before making changes. Review the PR diff and context, follow the custom instructions below, push any necessary commits to the PR branch, and comment on the PR with a concise summary when finished.',
               '',
               'Custom instructions:',
               instructions,
@@ -86,6 +95,13 @@ jobs:
               prompt,
               title: `PR #${pr.number}: ${pr.title}`.slice(0, 80),
               repos: [`${context.repo.owner}/${context.repo.repo}`],
+              session_secrets: [
+                {
+                  key: 'GITHUB_TOKEN',
+                  value: process.env.DEVIN_GITHUB_TOKEN,
+                  sensitive: true,
+                },
+              ],
               tags: [
                 'github-actions',
                 'manual-pr',
@@ -156,13 +172,20 @@ jobs:
         if: success()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
+          DEVIN_GITHUB_TOKEN: ${{ secrets.DEVIN_GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.prepare.outputs.pr_number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SESSION_ID: ${{ steps.devin.outputs.session_id }}
           SESSION_URL: ${{ steps.devin.outputs.session_url }}
         with:
+          github-token: ${{ secrets.DEVIN_GITHUB_TOKEN }}
           script: |
             const prNumber = Number(process.env.PR_NUMBER);
+            if (!process.env.DEVIN_GITHUB_TOKEN) {
+              core.setFailed('DEVIN_GITHUB_TOKEN repository secret is required.');
+              return;
+            }
+
             const sessionLink = process.env.SESSION_URL || `https://app.devin.ai/sessions/${process.env.SESSION_ID}`;
             const body = [
               `Devin was launched by @${context.actor} for this PR.`,
