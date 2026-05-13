@@ -350,7 +350,40 @@ Validate the log file before continuing to mutations:
 
 `lint_log.py` checks the YAML front matter shape, all required H2 section headings, and that `final_state.mutation_testing.rerun_type` is set when `status: completed`. Exit code 0 means the log conforms to `template_02_mutation_testing.md`. Run it again after Phase 10 (final log update).
 
-## Measure — Phase 5: Select realistic mutations
+## Measure — Phase 5: Select high-impact mutations
+
+The goal of mutation selection is to **find real test gaps**, not to confirm things already work. Prioritize mutations that have a high chance of surviving — these are the mutations that deliver actionable value.
+
+### Step 1: Pre-analyze coverage to identify weak spots
+
+Before designing any mutations, review the `term-missing` coverage output from Phase 3 and the PR diff to identify:
+
+1. **Uncovered lines/branches** in PR-changed code — these are prime mutation targets because tests don’t exercise them at all.
+2. **Low branch-coverage functions** — functions with many untested branches hide implicit behavior assumptions.
+3. **Complex conditional logic** — nested conditions, multi-clause guards, and exception handlers are where subtle regressions hide.
+4. **Implicit contracts** — behavior that callers depend on but that has no explicit assertion (e.g., return type shape, side-effect ordering, error message format).
+5. **Integration seams** — points where the PR’s code interacts with external systems, configs, or other modules.
+
+This analysis directly informs which mutations to create. Every mutation should target a specific weak spot identified here.
+
+### Step 2: Ensure coverage of all major failure areas
+
+Mutations must span the PR’s major failure areas — do not cluster mutations in one category. Before finalizing the mutation plan, verify that the set covers all applicable areas from this checklist:
+
+| Failure area | What to mutate | Why it matters |
+|---|---|---|
+| **Validation/guards** | Remove or invert input validation, type checks, permission gates | Lets invalid data or unauthorized access through |
+| **Data integrity** | Skip normalization, escaping, encoding, formatting | Corrupts stored/transmitted data |
+| **Error handling** | Replace fail-closed with fail-open, swallow exceptions, remove fallback | Silent failures in production |
+| **Security boundaries** | Bypass auth checks, weaken sanitization, skip rate limits | Exploitable vulnerabilities |
+| **Control flow** | Wrong execution order, skip a pipeline stage, short-circuit loops | Subtle behavioral regressions |
+| **Boundary conditions** | Off-by-one, empty collections, null/None inputs, max-length values | Edge cases that crash or produce wrong results |
+| **Configuration/wiring** | Hardcode a dynamic value, swap a dependency, ignore a feature flag | Integration blind spots |
+| **Output contracts** | Change return type shape, omit a required field, alter ordering | Downstream consumers break silently |
+
+Not every area applies to every PR. Skip areas that are genuinely irrelevant, but document why. If a PR touches validation logic, there must be validation mutations. If it touches error handling, there must be error-handling mutations.
+
+### Step 3: Design mutations with breaking likelihood
 
 Select mutations proportional to the PR's scope and number of critical guarantees:
 
@@ -358,35 +391,47 @@ Select mutations proportional to the PR's scope and number of critical guarantee
 - **Medium PRs** (3–5 changed files, moderate complexity): 8–15 mutations.
 - **Large PRs** (6+ changed files or complex behavior): 15–25 mutations.
 
-Target approximately 2–3 mutations per critical guarantee. Each critical guarantee should have at least one strength mutation (expected to be killed) and one gap mutation (may survive). Do not pad the count with redundant mutations that test the same assertion.
+Target approximately 2–3 mutations per critical guarantee. **Bias heavily toward gap mutations** — aim for at least 60% gap mutations (likely to survive) and at most 40% strength mutations (expected to be killed). Strength mutations are only valuable as a sanity check; gap mutations are where the real value lies.
 
-Mutations should be:
+For each mutation, assess its **breaking likelihood** — how likely it is to survive the current test suite:
 
-- realistic,
-- tied to the PR's critical guarantees,
-- capable of revealing real regression risk,
-- non-duplicative,
-- easy to explain.
+| Breaking likelihood | Criteria | Priority |
+|---|---|---|
+| **High** | Targets uncovered lines/branches, no test asserts on this behavior, implicit contract | Design these first |
+| **Medium** | Covered by tests but assertions are weak (e.g., only checks status code, not body), or tests use mocked inputs that bypass the mutated path | Include these for coverage |
+| **Low** | Directly tested with strong assertions, multiple tests cover the same path | Include sparingly as sanity checks only |
+
+Do not pad the count with low-breaking-likelihood mutations. If you cannot find enough high/medium-likelihood mutations, that signals the PR already has strong test coverage — report that finding rather than inventing weak mutations.
+
+Mutations must be:
+
+- **impactful** — a surviving mutation reveals a meaningful test gap, not a cosmetic difference,
+- **realistic** — a developer could plausibly introduce this regression,
+- **tied to the PR's critical guarantees** — not tangential behavior,
+- **non-duplicative** — each mutation tests a different assertion path or failure area,
+- **actionable** — if it survives, there's a clear test to write.
 
 Include both:
 
-1. **Strength mutations** — expected to be killed; they show what the tests protect well.
-2. **Gap mutations** — plausible regressions that may survive; they reveal missing behavioral coverage.
+1. **Gap mutations** (primary focus) — plausible regressions targeting identified weak spots; these are expected to have a real chance of surviving and reveal missing behavioral coverage.
+2. **Strength mutations** (secondary) — expected to be killed; included as sanity checks to confirm critical protections exist. Keep these to a minimum.
 
-### Good mutation categories
+### Good mutation categories (ordered by typical breaking likelihood)
 
-| Category | Examples |
-|---|---|
-| Removed guard | Remove a validation branch, permission check, denylist item, AST node, or blocked operation. |
-| Inverted condition | `if allowed` → `if not allowed`, `any` → `all`, `==` → `!=`. |
-| Fail-open error handling | Replace fail-closed exception handling with allow/continue. |
-| Wrong ordering | Execute action before validation, persist before authorization, emit side effect before guard. |
-| Missing preprocessing | Skip template rendering, normalization, decoding, trimming, parsing, escaping. |
-| Wrong dependency/input | Use default dialect/config/user/context instead of the real one. |
-| Boundary variants | Case sensitivity, whitespace, empty values, multi-statement order, null/missing fields. |
-| Scope reduction | Check only first item, last item, first statement, current user, first permission. |
-| Wrong helper | Call a broader/narrower helper with a similar name but different semantics. |
-| Partial enum/list coverage | Remove one enum member, AST node, error type, backend, or operation type. |
+| Category | Examples | Typical breaking likelihood |
+|---|---|---|
+| Missing preprocessing | Skip template rendering, normalization, decoding, trimming, parsing, escaping. | **High** — tests often feed pre-processed input, bypassing the pipeline |
+| Wrong dependency/input | Use default dialect/config/user/context instead of the real one. | **High** — tests frequently mock dependencies, missing real integration |
+| Boundary variants | Case sensitivity, whitespace, empty values, multi-statement order, null/missing fields. | **High** — edge cases are the most common coverage gap |
+| Partial enum/list coverage | Remove one enum member, AST node, error type, backend, or operation type. | **High** — exhaustiveness is rarely tested fully |
+| Scope reduction | Check only first item, last item, first statement, current user, first permission. | **Medium-High** — loop/collection logic is often tested with single-item inputs |
+| Fail-open error handling | Replace fail-closed exception handling with allow/continue. | **Medium** — error paths vary in test coverage |
+| Wrong ordering | Execute action before validation, persist before authorization, emit side effect before guard. | **Medium** — ordering is implicit and rarely asserted |
+| Wrong helper | Call a broader/narrower helper with a similar name but different semantics. | **Medium** — depends on test specificity |
+| Removed guard | Remove a validation branch, permission check, denylist item, AST node, or blocked operation. | **Medium-Low** — guards are often directly tested |
+| Inverted condition | `if allowed` → `if not allowed`, `any` → `all`, `==` → `!=`. | **Low** — usually caught by basic happy-path tests |
+
+Start mutation design from the top of this table (highest breaking likelihood) and work down. This maximizes the chance of finding real test gaps rather than confirming already-tested behavior.
 
 Avoid:
 
@@ -394,7 +439,8 @@ Avoid:
 - mutations that cannot import or run,
 - unrelated mutations,
 - multiple mutations proving the same assertion,
-- unrealistic changes no maintainer would plausibly make.
+- unrealistic changes no maintainer would plausibly make,
+- **trivially caught mutations** — if a mutation will obviously be killed by an existing test that directly asserts on the exact value being mutated, it adds no value; replace it with a higher-impact mutation.
 
 For manual/interactive runs, present the mutation plan before executing:
 
@@ -707,48 +753,63 @@ Replacing a real dependency with a hardcoded default (e.g., using a literal stri
 
 Mutations that reduce scope (check only the first/last item instead of all, skip one member of an enum/list, change a boundary condition) reveal whether tests cover the full range of inputs. These are plausible regressions a developer might introduce and are often missed by line-coverage-only analysis.
 
+## Lesson 7: A high initial kill rate signals weak mutation design, not strong tests
+
+If every mutation in the initial run is killed, the mutations were too easy — they only confirmed what tests already protect. The goal is to *find gaps*, which means mutations should target areas where test coverage is thin or assertions are weak. Aim for an initial kill rate of 50–80%. A 100% initial kill rate means the mutation set should be redesigned with harder, more targeted mutations.
+
+## Lesson 8: Mutations must span failure areas, not cluster in one category
+
+A common mistake is designing 10 mutations that all test the same category (e.g., all "removed guard" mutations). This finds one type of gap at most. Spread mutations across validation, data integrity, error handling, boundaries, configuration, and output contracts. Each category reveals different kinds of test weaknesses.
+
+## Lesson 9: Coverage-informed mutation design outperforms random selection
+
+The most effective mutation sets are designed by first analyzing coverage data — uncovered lines, low branch percentages, implicit contracts — then crafting mutations that specifically target those weak spots. This approach finds more surviving mutations (real gaps) than selecting mutations based on code patterns alone.
+
 ---
 
 # What Makes a Good Mutation
 
-Good mutations are **plausible** (a developer could realistically introduce this regression), **targeted** (tied to the PR's critical guarantees), **actionable** (a surviving mutation points to a specific missing test), and **non-duplicative** (each mutation tests a different assertion path).
+Good mutations are **impactful** (surviving reveals a meaningful test gap, not a cosmetic difference), **plausible** (a developer could realistically introduce this regression), **targeted** (tied to the PR's critical guarantees), **actionable** (a surviving mutation points to a specific missing test), **non-duplicative** (each mutation tests a different assertion path), and **coverage-informed** (designed based on analysis of uncovered lines, weak branches, and implicit contracts).
 
-## Strength mutation patterns (expected to be killed)
+**The best mutation is one that survives.** A 100% kill rate on the initial run does not mean the mutations were good — it may mean they were too easy. If every mutation is trivially caught, the mutation set failed to probe the real weaknesses. Aim for an initial kill rate of 50–80%; this indicates the mutations are genuinely testing coverage boundaries.
 
-| Pattern | Example |
-|---|---|
-| Remove item from validation/denylist | Remove one entry from a blocklist, enum, or AST-node set |
-| Invert boolean aggregation | `any(...)` → `all(...)`, or `==` → `!=` |
-| Reverse fail-closed error handling | Allow operation to proceed on parse/validation error |
-| Wrong execution order | Execute side effect before guard/validation check |
-| Scope reduction — opposite ends | Check only first item vs. check only last item |
-| Wrong helper with similar name | Call a broader/narrower function with different semantics |
+## High-value mutation patterns (most likely to survive and reveal real gaps)
 
-## Gap mutation patterns (may survive, revealing missing coverage)
+| Pattern | Example | Why it's high-value |
+|---|---|---|
+| Skip preprocessing step | Skip template rendering, escaping, normalization, or decoding before validation | Tests often feed pre-processed input directly, never exercising the pipeline |
+| Hardcode a dependency | Replace dynamic config/dialect/context with a literal default | Tests frequently mock dependencies, missing whether real values are wired correctly |
+| Boundary condition shift | Change `>=` to `>`, or `<` to `<=` | Off-by-one errors are the most common class of subtle bugs |
+| Partial list/enum coverage | Remove one member from an exhaustive match | Exhaustiveness is rarely tested — removing one case often goes unnoticed |
+| Case/whitespace sensitivity | Remove `.lower()`, `.strip()`, add trailing space to a comparison | Text normalization is frequently assumed but not asserted |
+| Scope reduction | Process only first item, skip iteration, short-circuit a loop | Tests with single-item inputs never catch scope reductions |
+| Output contract violation | Omit a required field from a return dict, change ordering of results | Downstream consumers depend on shape, but tests often only check partial structure |
+| Implicit ordering dependency | Execute side effect before its guard, reorder pipeline stages | Ordering is implicit and almost never directly asserted |
 
-| Pattern | Example |
-|---|---|
-| Skip preprocessing step | Skip template rendering, escaping, normalization, or decoding before validation |
-| Hardcode a dependency | Replace dynamic config/dialect/context with a literal default |
-| Whitespace/separator sensitivity | Change detection from `.drop` to `.drop ` (trailing space) |
-| Case sensitivity omission | Remove `.lower()` or `.upper()` from a comparison |
-| Partial list/enum coverage | Remove one member from an exhaustive match |
-| Boundary condition shift | Change `>=` to `>`, or `<` to `<=` |
+## Lower-value mutation patterns (use sparingly as sanity checks)
+
+| Pattern | Example | Why it's lower-value |
+|---|---|---|
+| Remove validation guard | Remove a permission check or blocklist entry | Usually caught by existing tests that directly test the guard |
+| Invert boolean condition | `if allowed` → `if not allowed`, `==` → `!=` | Trivially caught by any test that exercises the happy path |
+| Reverse error handling | Allow operation to proceed on parse/validation error | Often caught if error tests exist |
 
 ---
 
-# Mutation selection priorities
+# Mutation selection priorities (ordered by breaking likelihood — design from top down)
 
-- removed validation guard
-- inverted condition
-- fail-open exception handling
-- wrong execution order
-- skipped preprocessing/rendering/normalization
-- wrong config/dialect/context
-- case, whitespace, null, empty, or ordering variants
-- checking only first/last item instead of all items
-- wrong helper with similar name but different semantics
-- missing enum/list/AST-node member
+1. skipped preprocessing/rendering/normalization/escaping (highest chance of surviving)
+2. hardcoded dependency replacing dynamic config/dialect/context
+3. boundary condition shifts (off-by-one, empty, null, max-length)
+4. partial enum/list/AST-node coverage (remove one member)
+5. scope reduction — process only first/last item instead of all
+6. case, whitespace, separator sensitivity omissions
+7. output contract violations (missing field, wrong ordering, changed shape)
+8. wrong execution order (side effect before guard)
+9. wrong helper with similar name but different semantics
+10. fail-open exception handling
+11. removed validation guard (often already well-tested)
+12. inverted condition (lowest priority — usually trivially caught)
 
 ---
 
@@ -843,17 +904,25 @@ Workflow:
 10. Commit: commit the fixes and log file to the PR branch; push if required for the PR to update.
 11. Report: update the PR comment with the final before/after report using template_03_final_report.md exactly. This is the only valid PR comment format.
 
-Mutation selection priorities:
-- removed validation guard
-- inverted condition
-- fail-open exception handling
-- wrong execution order
-- skipped preprocessing/rendering/normalization
-- wrong config/dialect/context
-- case, whitespace, null, empty, or ordering variants
-- checking only first/last item instead of all items
-- wrong helper with similar name but different semantics
-- missing enum/list/AST-node member
+Mutation selection priorities (ordered by breaking likelihood — design from top down):
+1. skipped preprocessing/rendering/normalization/escaping (highest survival rate)
+2. hardcoded dependency replacing dynamic config/dialect/context
+3. boundary condition shifts (off-by-one, empty, null, max-length)
+4. partial enum/list/AST-node coverage (remove one member)
+5. scope reduction — process only first/last item instead of all
+6. case, whitespace, separator sensitivity omissions
+7. output contract violations (missing field, wrong ordering, changed shape)
+8. wrong execution order (side effect before guard)
+9. wrong helper with similar name but different semantics
+10. fail-open exception handling
+11. removed validation guard (often already well-tested)
+12. inverted condition (lowest priority — usually trivially caught)
+
+Mutation quality requirements:
+- At least 60% gap mutations (likely to survive), at most 40% strength mutations
+- Every mutation must target a specific identified weak spot from coverage/code analysis
+- Mutations must span all applicable major failure areas (validation, data integrity, error handling, security, control flow, boundaries, configuration, output contracts)
+- Do not pad with low-value mutations that will be trivially caught
 
 Report metrics:
 - targeted suite pass rate
