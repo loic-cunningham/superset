@@ -20,10 +20,10 @@ jobs:
       pull-requests: read
 
     steps:
-      - name: Checkout repo
+      - name: Checkout docs from default branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.repository.default_branch || 'master' }}
           sparse-checkout: |
             .devin/docs/
 
@@ -62,8 +62,38 @@ jobs:
               return;
             }
 
-            // Read the mutation testing instructions and all 3 templates
+            // Fetch list of files changed by the PR
             const docsDir = '.devin/docs';
+            const { data: prFiles } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+
+            // Override docs that the PR itself modifies with the PR-head version
+            const changedDocs = prFiles
+              .filter(f => f.filename.startsWith(`${docsDir}/`) && f.status !== 'removed')
+              .map(f => f.filename);
+
+            for (const filePath of changedDocs) {
+              try {
+                const { data } = await github.rest.repos.getContent({
+                  owner: pr.head.repo.owner.login,
+                  repo: pr.head.repo.name,
+                  path: filePath,
+                  ref: pr.head.sha,
+                });
+                if (data.content) {
+                  fs.writeFileSync(filePath, Buffer.from(data.content, 'base64').toString('utf8'));
+                  core.info(`Using PR version of ${filePath}`);
+                }
+              } catch (e) {
+                core.warning(`Could not fetch PR version of ${filePath}: ${e.message}`);
+              }
+            }
+
+            // Read the mutation testing instructions and all 3 templates
             const instructionFiles = [
               'mutation_testing_agent_handoff.md',
               'template_01_test_foundation.md',
