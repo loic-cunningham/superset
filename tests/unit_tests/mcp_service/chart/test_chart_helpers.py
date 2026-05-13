@@ -168,6 +168,25 @@ def test_match_adhoc_by_subject_missing_operator_or_comparator():
     assert _match_adhoc_by_subject(adhoc, "region") == (None, None)
 
 
+def test_match_adhoc_by_subject_requires_exact_equality_not_substring():
+    """A column that is a substring of a subject must not falsely match."""
+    adhoc = [
+        {"subject": "regional_code", "operator": "==", "comparator": "X"},
+        {"subject": "region_id", "operator": "IN", "comparator": ["Y"]},
+    ]
+    # 'region' is a substring of both subjects but not equal to either.
+    assert _match_adhoc_by_subject(adhoc, "region") is None
+
+
+def test_match_adhoc_by_subject_prefers_exact_over_substring_neighbor():
+    """When both an exact-match and a substring-neighbor exist, exact match wins."""
+    adhoc = [
+        {"subject": "regional_code", "operator": "==", "comparator": "WRONG"},
+        {"subject": "region", "operator": "IN", "comparator": ["RIGHT"]},
+    ]
+    assert _match_adhoc_by_subject(adhoc, "region") == ("IN", ["RIGHT"])
+
+
 # ---------------------------------------------------------------------------
 # _match_legacy_by_col
 # ---------------------------------------------------------------------------
@@ -260,6 +279,21 @@ def test_resolve_returns_none_when_no_matches_and_no_time_range():
         "filters": [{"col": "other", "op": "==", "val": "x"}],
     }
     assert _resolve_filter_operator_and_value(extra, "region") == (None, None)
+
+
+def test_resolve_does_not_substring_match_adhoc_subject():
+    """`region` must not erroneously match adhoc subject `region_id`."""
+    extra = {
+        "adhoc_filters": [{"subject": "region_id", "operator": "==", "comparator": "X"}],
+        "time_range": "Last 7 days",
+    }
+    # If the adhoc match used substring, it would short-circuit to ("==", "X").
+    # The expected behavior is no adhoc match, then no legacy match, then the
+    # time_range fallback is returned for a non-temporal column.
+    assert _resolve_filter_operator_and_value(extra, "region") == (
+        "TIME_RANGE",
+        "Last 7 days",
+    )
 
 
 # ---------------------------------------------------------------------------

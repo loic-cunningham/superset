@@ -1,0 +1,170 @@
+targets:
+  - path: superset/mcp_service/chart/chart_helpers.py
+  - path: superset/mcp_service/chart/tool/get_chart_info.py
+test_paths:
+  - tests/unit_tests/mcp_service/chart/test_chart_helpers.py
+  - tests/unit_tests/mcp_service/chart/tool/test_get_chart_info.py
+  - tests/unit_tests/mcp_service/chart/test_chart_schemas.py
+mutations:
+  - id: M1
+    description: "_match_adhoc_by_subject returns operator+subject instead of operator+comparator"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 12
+    old: |
+      return af.get("operator"), af.get("comparator")
+    new: |
+      return af.get("operator"), af.get("subject")
+
+  - id: M2
+    description: "_match_adhoc_by_subject matches subject via substring instead of equality"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 8
+    old: |
+      if isinstance(af, dict) and af.get("subject") == column:
+    new: |
+      if isinstance(af, dict) and column in str(af.get("subject", "")):
+
+  - id: M3
+    description: "_match_legacy_by_col swaps op and val in returned tuple"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 12
+    old: |
+      return f.get("op"), f.get("val")
+    new: |
+      return f.get("val"), f.get("op")
+
+  - id: M4
+    description: "_resolve_filter_operator_and_value tries legacy before adhoc"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 4
+    old: |
+      if match := _match_adhoc_by_subject(extra_form_data.get("adhoc_filters"), column):
+          return match
+      if match := _match_legacy_by_col(extra_form_data.get("filters"), column):
+          return match
+    new: |
+      if match := _match_legacy_by_col(extra_form_data.get("filters"), column):
+          return match
+      if match := _match_adhoc_by_subject(extra_form_data.get("adhoc_filters"), column):
+          return match
+
+  - id: M5
+    description: "_resolve_filter_operator_and_value drops time_range fallback"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 4
+    old: |
+      # Temporal filters contribute time_range with no target column
+      if time_range := extra_form_data.get("time_range"):
+          return "TIME_RANGE", time_range
+      return None, None
+    new: |
+      # Temporal filters contribute time_range with no target column
+      return None, None
+
+  - id: M6
+    description: "build_applied_dashboard_filters skips dashboard access check"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 4
+    old: |
+      security_manager.raise_for_access(dashboard=dashboard)
+    new: |
+      pass  # mutation: skipped raise_for_access
+
+  - id: M7
+    description: "build_applied_dashboard_filters inverts chart-on-dashboard check"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 4
+    old: |
+      if chart_id not in slice_ids:
+          raise ChartNotOnDashboardError(
+              f"Chart {chart_id} is not on dashboard {dashboard_id}"
+          )
+    new: |
+      if chart_id in slice_ids:
+          raise ChartNotOnDashboardError(
+              f"Chart {chart_id} is not on dashboard {dashboard_id}"
+          )
+
+  - id: M8
+    description: "build_applied_dashboard_filters never skips DIVIDER filters"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 8
+    old: |
+      if flt.get("type", "") == "DIVIDER":
+          continue
+    new: |
+      if flt.get("type", "") == "NOT_A_REAL_TYPE":
+          continue
+
+  - id: M9
+    description: "build_applied_dashboard_filters skips the in-scope check (includes all)"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 8
+    old: |
+      if not _is_filter_in_scope_for_chart(flt, chart_id, position_json):
+          continue
+    new: |
+      pass  # mutation: skipped scope check
+
+  - id: M10
+    description: "AppliedDashboardFilter status passes enum directly instead of .value"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 16
+    old: |
+      status=status.value,
+    new: |
+      status=status,
+
+  - id: M11
+    description: "AppliedDashboardFilter swaps id and name fields"
+    file: superset/mcp_service/chart/chart_helpers.py
+    indent: 16
+    old: |
+      id=flt.get("id"),
+      name=flt.get("name"),
+    new: |
+      id=flt.get("name"),
+      name=flt.get("id"),
+
+  - id: M12
+    description: "_attach_dashboard_filters returns wrong error_type for DashboardNotFoundError"
+    file: superset/mcp_service/chart/tool/get_chart_info.py
+    indent: 8
+    old: |
+      except DashboardNotFoundError as exc:
+          await ctx.warning("Dashboard not found: %s" % (str(exc),))
+          return ChartError(error=str(exc), error_type="DashboardNotFound")
+    new: |
+      except DashboardNotFoundError as exc:
+          await ctx.warning("Dashboard not found: %s" % (str(exc),))
+          return ChartError(error=str(exc), error_type="NotFound")
+
+  - id: M13
+    description: "_attach_dashboard_filters swaps DashboardNotFound and ChartNotOnDashboard error types"
+    file: superset/mcp_service/chart/tool/get_chart_info.py
+    indent: 8
+    old: |
+      except DashboardNotFoundError as exc:
+          await ctx.warning("Dashboard not found: %s" % (str(exc),))
+          return ChartError(error=str(exc), error_type="DashboardNotFound")
+      except ChartNotOnDashboardError as exc:
+          await ctx.warning("Chart not on dashboard: %s" % (str(exc),))
+          return ChartError(error=str(exc), error_type="ChartNotOnDashboard")
+    new: |
+      except DashboardNotFoundError as exc:
+          await ctx.warning("Dashboard not found: %s" % (str(exc),))
+          return ChartError(error=str(exc), error_type="ChartNotOnDashboard")
+      except ChartNotOnDashboardError as exc:
+          await ctx.warning("Chart not on dashboard: %s" % (str(exc),))
+          return ChartError(error=str(exc), error_type="DashboardNotFound")
+
+  - id: M14
+    description: "_attach_dashboard_filters removes the result.id None guard"
+    file: superset/mcp_service/chart/tool/get_chart_info.py
+    indent: 4
+    old: |
+      if not result.id:
+          return None
+      with event_logger.log_context(action="mcp.get_chart_info.dashboard_filters"):
+    new: |
+      with event_logger.log_context(action="mcp.get_chart_info.dashboard_filters"):
