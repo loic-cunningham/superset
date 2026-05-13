@@ -26,12 +26,12 @@ running mutation testing against Superset pull requests.
 
 | Path | Purpose |
 |---|---|
-| `.devin/docs/mutation_testing_agent_handoff.md` | Full lifecycle specification (Phases 0–13). |
-| `.devin/docs/template_01_test_foundation.md` | Stage 1 template — foundation test plan. |
-| `.devin/docs/template_02_mutation_testing.md` | Stage 2 template — repo-tracked log file. |
-| `.devin/docs/template_03_final_report.md` | Stage 3 template — final PR comment. |
-| `.devin/docs/template_*.example.md` | Filled examples for each template. |
-| `.devin/mutation-testing/scripts/` | Reusable automation scripts (this directory). |
+| `.devin/mutation-testing/templates/mutation_testing_agent_handoff.md` | Full lifecycle specification (Phases 0–13). |
+| `.devin/mutation-testing/templates/template_01_test_foundation.md` | Stage 1 template — foundation test plan. |
+| `.devin/mutation-testing/templates/template_02_mutation_testing.md` | Stage 2 template — repo-tracked log file. |
+| `.devin/mutation-testing/templates/template_03_final_report.md` | Stage 3 template — final PR comment. |
+| `.devin/mutation-testing/templates/template_*.example.md` | Filled examples for each template. |
+| `.devin/mutation-testing/scripts/` | Reusable automation scripts. |
 | `.devin/mutation-testing/pr-<N>-<date>-<slug>.md` | Per-PR log files conforming to Stage 2. |
 
 ## Why These Scripts Exist
@@ -46,7 +46,7 @@ with the templates.
 | pytest requires the venv, `PY_KEY_VALUE_DISABLE_BEARTYPE=true`, and PR-specific deselections — applied identically across all runs. | `run_targeted.sh` |
 | Reshaping `pytest-cov` JSON output into the log file's YAML coverage schema. | `coverage_summary.py` |
 | Silent no-ops, case-sensitive result parsing, and working-tree pollution from hand-rolled mutation loops. | `mutation_runner.py` |
-| Templates live on `master`; PR branches under test may not have them. | `fetch_templates.sh` |
+| Templates live on `master` under `.devin/mutation-testing/templates/`; PR branches under test may not have them, and legacy branches keep them in `.devin/docs/`. | `fetch_templates.sh` |
 | The PR comment is ~20 KB of nested `<details>` with a JA mirror — easy to drop a section. | `render_pr_comment.py` |
 | Log file YAML shape and section order must stay in sync with the template. | `lint_log.py` |
 
