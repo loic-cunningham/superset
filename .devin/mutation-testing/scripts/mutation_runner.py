@@ -16,53 +16,43 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-mutation_runner.py — Apply mutations to source files one at a time, run the
-targeted test suite, classify each mutation as KILLED or SURVIVED, and restore
-the working tree.
+mutation_runner.py — Apply mutations one at a time, run tests, classify, restore.
 
-This is the canonical way to execute the "measure" and "verify" phases of the
-mutation-testing lifecycle. It exists to remove three classes of bugs that
-plagued the manual bash-heredoc approach:
+The canonical tool for the "measure" and "verify" phases of the mutation-testing
+lifecycle. It prevents three classes of errors:
 
-  1. Result mis-classification from case-insensitive grep on pytest output.
-  2. Silent no-op mutations when the patch couldn't be applied (e.g. the
-     `old_string` wasn't unique or wasn't present).
-  3. Working-tree pollution when a restore step failed.
+  1. Result mis-classification from loose grep on pytest output.
+  2. Silent no-op mutations when the patch cannot be applied.
+  3. Working-tree pollution when a restore step fails.
 
-Mutation spec format (YAML):
+Mutation spec format (YAML)::
 
     targets:
       - path: superset/sql/parse.py
-      - path: superset/mcp_service/sql_lab/tool/execute_sql.py
     test_paths:
       - tests/unit_tests/sql/parse_tests.py
-      - tests/unit_tests/mcp_service/sql_lab/tool/test_execute_sql.py
     mutations:
       - id: M1
         description: Remove exp.Drop from destructive_nodes
         file: superset/sql/parse.py
-        # `indent: N` prepends N spaces to every line of `old`/`new`. Use this
-        # when the original code has leading whitespace — YAML's `|` block
-        # scalar strips it. Otherwise use a double-quoted string with explicit
-        # `\n` for exact byte-for-byte control.
-        indent: 12
+        indent: 12        # prepend N spaces per line (YAML | strips them)
         old: |
           exp.Drop,
           exp.TruncateTable,
         new: |
           exp.TruncateTable,
 
-Each mutation's `old` string must be unique inside `file` *after* the indent
-is applied. If it isn't, the mutation aborts with an `error` status (a
-SURVIVED result on a mutation that never applied is meaningless).
+Each mutation's ``old`` string must be unique in ``file`` after indentation is
+applied. Non-unique or missing matches abort with ``error`` status.
 
-Usage:
+Usage::
+
     mutation_runner.py spec.yaml \\
         --results /tmp/mutation-results.json \\
         [--only M11,M12,M13,M16] \\
         [--continue-on-error]
 
-Exit code: 0 if every mutation ran cleanly (regardless of killed/survived);
+Exit code: 0 if every mutation ran (regardless of killed/survived);
 non-zero if any mutation failed to apply or restore.
 """
 
@@ -78,12 +68,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    import yaml  # PyYAML, present as a transitive Superset dep
-except ImportError as exc:  # pragma: no cover - defensive
-    print(
-        "mutation_runner: PyYAML is required. Install via `pip install pyyaml`.",
-        file=sys.stderr,
-    )
+    import yaml
+except ImportError as exc:  # pragma: no cover
+    print("mutation_runner: PyYAML is required (`pip install pyyaml`).", file=sys.stderr)
     raise SystemExit(2) from exc
 
 
@@ -139,16 +126,17 @@ def _apply_indent(text: str, indent: int) -> str:
     if not indent:
         return text
     prefix = " " * indent
-    # Preserve a possible trailing newline; only indent non-empty lines.
+
     lines = text.split("\n")
     out = [prefix + line if line else line for line in lines]
     return "\n".join(out)
 
 
 def _apply_mutation(file_path: Path, old: str, new: str, indent: int = 0) -> None:
-    """Replace `old` with `new` inside `file_path`. Aborts unless `old` is
-    present exactly once. Both strings are first indented by `indent` spaces
-    per line (defaults to 0, i.e. no transformation)."""
+    """Replace *old* with *new* in *file_path*.
+
+    Aborts unless *old* (after indentation) appears exactly once.
+    """
     old_indented = _apply_indent(old, indent)
     new_indented = _apply_indent(new, indent)
     text = file_path.read_text()
@@ -169,7 +157,7 @@ _FAILED_LINE_RE = re.compile(r"^FAILED\s+(\S+)")
 
 
 def _parse_pytest_output(stdout: str) -> tuple[int, int, str | None]:
-    """Return (passed, failed, first_failing_test) from pytest stdout."""
+    """Parse pytest summary line into (passed, failed, first_failing_test)."""
     passed = failed = 0
     for line in reversed(stdout.splitlines()):
         if "passed" in line or "failed" in line or "error" in line:
@@ -181,8 +169,7 @@ def _parse_pytest_output(stdout: str) -> tuple[int, int, str | None]:
             if m_failed:
                 failed = int(m_failed.group(1))
             if m_error:
-                # Count errors as failures so a mutation that crashes
-                # collection still classifies as KILLED.
+                # Errors (collection crashes, etc.) count as failures.
                 failed += int(m_error.group(1))
             if m_passed or m_failed or m_error:
                 break
@@ -258,7 +245,7 @@ def _run_one(
         passed, failed, first_failing = _run_tests(test_paths)
     finally:
         _restore(target_paths)
-        # Defensive: re-check that the tree is clean after restore.
+
         _assert_tree_clean(target_paths)
 
     return MutationResult(

@@ -16,20 +16,20 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-lint_log.py — Validate that a mutation-testing log file (under
-`.devin/mutation-testing/`) conforms to `template_02_mutation_testing.md`.
+lint_log.py — Validate a mutation-testing log file against the Stage 2 template.
 
-What this checks:
-  - File path matches `pr-<N>-<YYYY-MM-DD>-<slug>.md`.
-  - YAML front matter is present, parsable, and contains the required keys.
-  - YAML status is one of {in_progress, completed}.
-  - All required H2 section headings are present, in order.
-  - `final_state` is fully populated when status is `completed`.
+Checks:
+  - Filename matches ``pr-<N>-<YYYY-MM-DD>-<slug>.md``.
+  - YAML front matter is present, parsable, and contains all required keys.
+  - Status is one of ``{in_progress, completed}``.
+  - All required H2 section headings are present and in order.
+  - ``final_state`` is fully populated when status is ``completed``.
 
-Usage:
+Usage::
+
     lint_log.py .devin/mutation-testing/pr-15-2026-05-13-foo.md
 
-Exit code: 0 if the file is valid, 1 otherwise. Errors print to stderr.
+Exit code: 0 if valid, 1 otherwise. Errors are printed to stderr.
 """
 
 from __future__ import annotations
@@ -42,8 +42,8 @@ from typing import Any
 
 try:
     import yaml
-except ImportError as exc:  # pragma: no cover - defensive
-    print("lint_log: PyYAML is required.", file=sys.stderr)
+except ImportError as exc:  # pragma: no cover
+    print("lint_log: PyYAML is required (`pip install pyyaml`).", file=sys.stderr)
     raise SystemExit(2) from exc
 
 
@@ -76,6 +76,7 @@ REQUIRED_SECTIONS = [
     "PR understanding",
     "Triage decision",
     "Initial targeted coverage",
+    "Weak spot analysis",
     "Initial mutation plan",
     "Initial mutation results",
     "Fix plan",
@@ -83,6 +84,7 @@ REQUIRED_SECTIONS = [
     "Final verification",
     "Final assessment",
     "What's left for high-quality coverage",
+    "Mutation quality self-assessment",
 ]
 
 

@@ -16,24 +16,19 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-coverage_summary.py — Run pytest with coverage and emit a JSON summary in
-exactly the shape the mutation-testing log file (`template_02_mutation_testing.md`)
-and final PR comment expect.
+coverage_summary.py — Run pytest with coverage and emit structured JSON.
 
-This script is the canonical bridge between pytest-cov's verbose JSON output
-and the `initial_state.coverage` / `final_state.coverage` YAML blocks used in
-the structured mutation-testing log. The agent never has to do its own JSON
-shaping or rounding.
+Bridges pytest-cov's verbose JSON output to the ``initial_state.coverage`` /
+``final_state.coverage`` YAML blocks used in the mutation-testing log.
 
-Usage:
+Usage::
+
     coverage_summary.py \\
         --tests tests/unit_tests/sql/parse_tests.py \\
-        --tests tests/unit_tests/mcp_service/sql_lab/tool/test_execute_sql.py \\
         --cov superset.sql.parse \\
-        --cov superset.mcp_service.sql_lab.tool.execute_sql \\
         --output /tmp/coverage.json
 
-Output JSON shape:
+Output JSON shape::
 
     {
       "command": "pytest <tests> --cov=<modules> --cov-branch ...",
@@ -65,7 +60,7 @@ def _run_pytest_with_coverage(
     cov_targets: list[str],
     extra_args: list[str],
 ) -> tuple[int, int, dict, str]:
-    """Run pytest under coverage and return (passed, failed, cov_json, cmd_str)."""
+    """Run pytest under coverage; return (passed, failed, cov_json, cmd_str)."""
     cov_json_path = Path(tempfile.mkstemp(prefix="cov-", suffix=".json")[1])
     cmd: list[str] = [
         str(REPO_ROOT / ".devin" / "mutation-testing" / "scripts" / "run_targeted.sh"),
@@ -89,7 +84,7 @@ def _run_pytest_with_coverage(
         check=False,
     )
     stdout = proc.stdout
-    # Parse the "N passed, M failed in T.TTs" summary line.
+
     passed = failed = 0
     for line in reversed(stdout.splitlines()):
         if "passed" in line or "failed" in line:

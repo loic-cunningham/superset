@@ -15,11 +15,7 @@ jobs:
   launch-devin:
     name: Launch Devin Mutation Testing
     runs-on: ubuntu-24.04
-    # Job-level guardrail. The only network call without a built-in timeout
-    # is the fetch() to api.devin.ai in the "Create Devin session" step,
-    # which itself uses an AbortSignal. This cap exists so that any other
-    # unexpected hang (DNS, runner queueing edge case, etc.) cannot keep
-    # the job pending for the GitHub default of 6 hours.
+    # Guard against unexpected hangs; the Devin API call has its own timeout.
     timeout-minutes: 5
     permissions:
       contents: read
@@ -157,10 +153,7 @@ jobs:
               core.setFailed('DEVIN_API_KEY and DEVIN_ORG_ID repository secrets are required.');
               return;
             }
-            // Node's fetch() has no default timeout. Without an AbortSignal,
-            // a slow or hung API call leaves the GHA step waiting until the
-            // job-level `timeout-minutes` kicks in, which is observable as
-            // "the action never completes".
+            // Explicit timeout so a slow API response does not hang the step.
             const DEVIN_API_TIMEOUT_MS = 60_000;
             let response;
             try {
