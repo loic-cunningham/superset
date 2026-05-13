@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from superset.mcp_service.chart.schemas import (
     ColumnRef,
     GenerateChartRequest,
+    GetChartInfoRequest,
     TableChartConfig,
     XYChartConfig,
 )
@@ -778,3 +779,113 @@ class TestGenerateChartRequestChartNameSanitization:
         assert len(req.sanitization_warnings) == 1
         assert "chart_name" in req.sanitization_warnings[0]
         assert "injected" not in req.sanitization_warnings[0]
+
+
+class TestAppliedDashboardFilter:
+    """Schema tests for AppliedDashboardFilter and its integration."""
+
+    def test_minimal_valid_filter_requires_status(self) -> None:
+        from superset.mcp_service.chart.schemas import AppliedDashboardFilter
+
+        flt = AppliedDashboardFilter(status="applied")
+        assert flt.status == "applied"
+        assert flt.id is None
+        assert flt.name is None
+        assert flt.filter_type is None
+        assert flt.column is None
+        assert flt.operator is None
+        assert flt.value is None
+
+    def test_status_field_is_required(self) -> None:
+        from superset.mcp_service.chart.schemas import AppliedDashboardFilter
+
+        with pytest.raises(ValidationError):
+            AppliedDashboardFilter()
+
+    def test_value_accepts_arbitrary_payload(self) -> None:
+        from superset.mcp_service.chart.schemas import AppliedDashboardFilter
+
+        for payload in (
+            ["CA", "NV"],
+            "Last 7 days",
+            42,
+            {"start": "2024-01-01", "end": "2024-12-31"},
+            None,
+        ):
+            flt = AppliedDashboardFilter(status="applied", value=payload)
+            assert flt.value == payload
+
+    def test_full_round_trip_serialization(self) -> None:
+        from superset.mcp_service.chart.schemas import AppliedDashboardFilter
+
+        flt = AppliedDashboardFilter(
+            id="NATIVE_FILTER-1",
+            name="State",
+            filter_type="filter_select",
+            column="state",
+            operator="IN",
+            value=["CA"],
+            status="applied",
+        )
+        dumped = flt.model_dump()
+        assert dumped["status"] == "applied"
+        assert dumped["column"] == "state"
+        assert dumped["operator"] == "IN"
+        assert dumped["value"] == ["CA"]
+
+
+class TestGetChartInfoRequestDashboardId:
+    """The new dashboard_id field on GetChartInfoRequest."""
+
+    def test_dashboard_id_defaults_to_none(self) -> None:
+        req = GetChartInfoRequest(identifier=1)
+        assert req.dashboard_id is None
+
+    def test_dashboard_id_accepts_int(self) -> None:
+        req = GetChartInfoRequest(identifier=1, dashboard_id=42)
+        assert req.dashboard_id == 42
+
+    def test_dashboard_id_alone_is_not_sufficient(self) -> None:
+        """dashboard_id without identifier or form_data_key still fails."""
+        with pytest.raises(ValidationError):
+            GetChartInfoRequest(dashboard_id=42)
+
+
+class TestChartFiltersInfoDashboardFilters:
+    """Behaviour of the new dashboard_filters list on ChartFiltersInfo."""
+
+    def test_dashboard_filters_default_is_empty_list(self) -> None:
+        from superset.mcp_service.chart.schemas import ChartFiltersInfo
+
+        info = ChartFiltersInfo()
+        assert info.dashboard_filters == []
+
+    def test_dashboard_filters_accepts_models(self) -> None:
+        from superset.mcp_service.chart.schemas import (
+            AppliedDashboardFilter,
+            ChartFiltersInfo,
+        )
+
+        applied = AppliedDashboardFilter(
+            id="f-1", column="state", operator="IN", value=["CA"], status="applied"
+        )
+        info = ChartFiltersInfo(dashboard_filters=[applied])
+        assert info.dashboard_filters[0].column == "state"
+        assert info.dashboard_filters[0].status == "applied"
+
+    def test_dashboard_filters_accepts_dicts_and_validates(self) -> None:
+        from superset.mcp_service.chart.schemas import ChartFiltersInfo
+
+        info = ChartFiltersInfo(
+            dashboard_filters=[
+                {
+                    "id": "f-1",
+                    "column": "state",
+                    "operator": "IN",
+                    "value": ["CA"],
+                    "status": "applied",
+                }
+            ]
+        )
+        assert len(info.dashboard_filters) == 1
+        assert info.dashboard_filters[0].column == "state"
