@@ -60,8 +60,19 @@ Success means:
 - Prefer targeted tests over the full suite, but include all tests relevant to the changed behavior.
 - Commit the final fixes and mutation log onto the PR branch.
 - If no meaningful gaps are found and coverage is already acceptable, the improve step is a no-op; still log, verify, commit the log, and report.
-- The final PR comment MUST follow the template in `template_03_final_report.md`. Do not create a custom format.
 - Pre-existing test failures must be identified and excluded via `--deselect`, never counted as mutation kills.
+
+### Mandatory template compliance
+
+All structured outputs MUST follow the corresponding template files exactly. These are the **only** valid formats for GitHub comments and repo-tracked logs produced by this workflow. Do not create custom formats, simplified versions, or alternative layouts.
+
+| Output | Required template | When used |
+|---|---|---|
+| Foundation test plan (Stage 1) | `template_01_test_foundation.md` | Phase 0b — when creating tests from scratch |
+| Repo-tracked mutation log (Stage 2) | `template_02_mutation_testing.md` | Phase 4 (initial) and Phase 10 (final update) |
+| PR comment — checkpoint and final report (Stage 3) | `template_03_final_report.md` | Phase 7 (checkpoint) and Phase 12 (final) |
+
+Every section, table, accordion, and JA translation block defined in the template must appear in the output. If a section is not applicable (e.g., no remaining uncaught mutations), follow the template's specific guidance for that case — do not omit the section. Refer to the `.example.md` companion files for concrete examples of correctly filled templates.
 
 ## User-visible Preamble
 
@@ -140,7 +151,7 @@ Create a comprehensive test foundation for the PR's changed behavior so that mut
 1. For each critical guarantee identified in triage, write at least one focused test.
 2. Cover the happy path, error path, and key edge cases for each changed function/method.
 3. Use the project's existing test patterns (fixtures, mocking style, file organization).
-4. Follow the template in `template_01_test_foundation.md` for structuring the test plan.
+4. Follow the template in `template_01_test_foundation.md` **exactly** for structuring the test plan. This is the only valid format for foundation test plans.
 
 ### Sub-agents
 
@@ -306,7 +317,7 @@ Recommended filename:
 
 This file must be committed with the PR branch.
 
-The log is the long-term index of Devin's test-quality work. It should include YAML front matter and both initial and final state. Follow the schema and body structure defined in `template_02_mutation_testing.md`.
+The log is the long-term index of Devin's test-quality work. It MUST include YAML front matter and both initial and final state. Follow the schema and body structure defined in `template_02_mutation_testing.md` **exactly** — this is the only valid format for mutation testing logs. See `template_02_mutation_testing.example.md` for a correctly filled example.
 
 Use `status: "in_progress"` while the run is still being improved/verified. Change it to `status: "completed"` only after final verification and commit.
 
@@ -441,7 +452,9 @@ survived rate = survived mutations / valid mutations
 
 ## Report checkpoint — Phase 7: Publish initial PR comment
 
-After initial mutation testing, post or update a PR comment that includes:
+After initial mutation testing, post or update a PR comment using the structure from `template_03_final_report.md`. At the checkpoint stage, fill in the initial state fields and leave final state fields as TBD.
+
+The comment must include:
 
 - initial coverage,
 - initial mutation kill rate,
@@ -449,9 +462,11 @@ After initial mutation testing, post or update a PR comment that includes:
 - what Devin will fix next,
 - the target for acceptable coverage.
 
-Keep this short. The PR comment should make the next action clear:
+Append a clear next-action line:
 
 > Devin will add targeted tests for the surviving mutation gaps and raise targeted coverage for the changed behavior, then rerun mutation testing and update this report with the final state.
+
+**Important:** Use the same `template_03_final_report.md` structure for both the checkpoint and the final report. The checkpoint is an incomplete version of the final report — same template, partial data. Do not use a different format for the checkpoint.
 
 ## Improve — Phase 8: Fix meaningful test gaps and coverage holes
 
@@ -576,18 +591,23 @@ Required final state:
 
 ## Report — Phase 12: Final PR comment update
 
-Update the PR comment with the final before/after report. **You MUST use the template from `template_03_final_report.md` exactly.** Do not create a custom format.
+Update the PR comment with the final before/after report. **You MUST use `template_03_final_report.md` exactly.** This is the only valid format for PR comments in this workflow. Do not create a custom format, simplified version, or alternative layout.
 
-The template requires:
-- Remaining uncaught mutations first (with ❌ accordion per mutation, including JA translation)
-- Fixed/caught mutations collapsed under one parent accordion (with ✓ per individual mutation)
-- Summary section
-- Changes made table
-- "What's left for high-quality coverage" table
-- Coverage + mutation score comparison table (initial vs final)
-- Bottom JA accordion with full Japanese translation
+The template requires every one of these sections:
+
+1. **Header** — mutation count, initial/final caught/survived, baseline/final result
+2. **Goal** — standard description of what Devin did
+3. **Remaining uncaught mutations** — ❌ accordion per surviving mutation with EN table + JA table, OR the standard "no surviving mutations" line
+4. **Fixed / verified caught mutations** — one parent accordion containing ✓ per individual mutation, each with EN explanation + JA translation
+5. **Summary** — brief English summary
+6. **Changes made** — table of Area / Change / Result
+7. **What's left for high-quality coverage** — table of Area / Add / Why + test quality comment
+8. **Coverage + mutation score** — initial vs final comparison table + comments + log path
+9. **JA accordion** — bottom accordion with full Japanese translation of summary, changes, what's left, test quality, coverage table, and comments
 
 Fill in all template variables. If no mutations survived, follow the template's note: "No surviving mutations remained after targeted fixes."
+
+See `template_03_final_report.example.md` for a correctly filled example based on a real run.
 
 ---
 
@@ -698,6 +718,8 @@ Critical guarantees:
 
 # PR Comment Requirements
 
+**`template_03_final_report.md` is the only valid format for PR comments.** No other comment format is permitted. All PR comments — both checkpoint (Phase 7) and final (Phase 12) — must use this template.
+
 Use GitHub-native markdown only:
 
 - markdown tables,
@@ -705,7 +727,7 @@ Use GitHub-native markdown only:
 - no screenshots,
 - no external formatting dependencies.
 
-Style rules:
+Style rules (encoded in the template):
 
 - Default visible content is English only.
 - Put remaining uncaught/surviving mutations first.
@@ -727,7 +749,7 @@ Style rules:
 - Include both initial and final state when fixes are made.
 - Mention what Devin fixed to close the gaps.
 
-The full PR comment template is in `template_03_final_report.md`.
+If you are unsure how to fill any section, refer to `template_03_final_report.example.md` for a complete worked example.
 
 ---
 
@@ -754,7 +776,11 @@ Constraints:
 - Commit the fixes and `.devin/mutation-testing/...` log file to the PR branch.
 - Do not run the full app test suite unless explicitly requested; use targeted tests relevant to this PR.
 - If no meaningful gaps are found and coverage is acceptable, mark improve as no-op, commit the log, and report.
-- The final PR comment MUST follow template_03_final_report.md exactly.
+- All structured outputs (foundation plan, mutation log, PR comments) MUST follow their corresponding template files exactly:
+  - Foundation test plan → template_01_test_foundation.md
+  - Mutation testing log → template_02_mutation_testing.md
+  - PR comments (checkpoint AND final) → template_03_final_report.md
+  No other comment or log format is permitted.
 
 Workflow:
 0. Triage: read the PR, assess existing test coverage. If absent or <30%, create foundation tests first.
@@ -779,7 +805,7 @@ Workflow:
 8. Verify: rerun targeted tests, targeted coverage, and the relevant mutation set.
 9. Log: update the log with final state.
 10. Commit: commit the fixes and log file to the PR branch; push if required for the PR to update.
-11. Report: update the PR comment with the final before/after report using template_03_final_report.md.
+11. Report: update the PR comment with the final before/after report using template_03_final_report.md exactly. This is the only valid PR comment format.
 
 Mutation selection priorities:
 - removed validation guard
