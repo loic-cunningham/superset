@@ -9,20 +9,15 @@ This template defines the exact structure for the final PR comment posted in Pha
 ````md
 ## Mutation testing — {{feature_or_pr_title}}
 
-`{{mutation_count}}` mutations · initial `{{initial_caught_count}}` caught / `{{initial_survived_count}}` survived · final `{{final_caught_count}}` caught / `{{final_survived_count}}` survived  
-❌ Initial uncaught: `{{initial_survived_count}}` · Final uncaught: `{{final_survived_count}}` · ✓ Final verified caught: `{{final_caught_count}}`  
-Baseline: `{{baseline_result}}` · Final: `{{final_result}}` · Target: {{targeted_suite_description}}
-
-### Goal
-
-Devin reviewed targeted coverage and mutation resistance, then added targeted tests/fixes for meaningful surviving mutations to bring the PR closer to high-quality behavioral coverage.
+`{{mutation_count}}` mutations · `{{initial_caught_count}}`→`{{final_caught_count}}` caught · `{{initial_survived_count}}`→`{{final_survived_count}}` survived · kill rate `{{initial_kill_rate}}`→`{{final_kill_rate}}`  
+Tests: `{{baseline_result}}`→`{{final_result}}` · Target: {{targeted_suite_description}}
 
 ### Remaining uncaught mutations
 
 <!-- If none remain, write this single line and omit the details block: -->
 <!-- No surviving mutations remained after targeted fixes. -->
 
-<!-- Otherwise, repeat this block for each final surviving mutation. Keep the summary line English-only. -->
+<!-- Otherwise, repeat this block for each final surviving mutation. -->
 
 <details>
 <summary>❌ {{surviving_mutation_name}}</summary>
@@ -32,55 +27,35 @@ Devin reviewed targeted coverage and mutation resistance, then added targeted te
 | Gap | {{short_english_gap}} |
 | Mutation | {{what_code_change_was_made}} |
 | Risk | {{why_this_matters_if_regressed}} |
-
----
-
-#### JA
-
-| 観点 | 詳細 |
-|---|---|
-| ギャップ | {{short_japanese_gap}} |
-| 変異内容 | {{japanese_mutation_description}} |
-| リスク | {{japanese_risk_description}} |
-</details>
-
-### Fixed / verified caught mutations
-
-<details>
-<summary>{{final_caught_count}} mutations caught by the targeted suite</summary>
-
-<!-- Repeat this nested block for each caught or newly fixed mutation. Use ✓ only here, not on the parent accordion. -->
-
-<details>
-<summary>✓ {{caught_mutation_name}}</summary>
-
-{{one_sentence_english_explanation}}
-
-Caught by: {{test_names_or_assertions_that_caught_it}}.
-
----
-
-#### JA
-
-{{one_sentence_japanese_explanation}}
-
-検出テスト: {{japanese_test_names_or_assertions}}。
-</details>
-
 </details>
 
 ### Summary
 
-{{brief_english_summary_of_initial_findings_and_final_state}}
+<!-- 2-3 lines max. Cover: what was found, what was fixed, what's left, and any important notes. The reader should not need to expand any details section to understand the outcome. -->
 
-### Changes made
+{{brief_scannable_summary_covering_findings_fixes_gaps_and_notes}}
+
+### Coverage
+
+| Metric | Initial | Final |
+|---|---:|---:|
+| Tests | {{initial_passed_tests}} passed | {{final_passed_tests}} passed |
+| Line coverage | `{{initial_line_coverage_percent}}` | `{{final_line_coverage_percent}}` |
+| Branch coverage | `{{initial_branch_coverage_percent}}` | `{{final_branch_coverage_percent}}` |
+| Kill rate | `{{initial_kill_rate_percent}}` ({{initial_killed}}/{{total}}) | `{{final_kill_rate_percent}}` ({{final_killed}}/{{total}}) |
+| Survived | {{initial_survived}} | {{final_survived}} |
+
+<details>
+<summary>Changes made</summary>
 
 | Area | Change | Result |
 |---|---|---|
 | {{changed_area_1}} | {{brief_change_1}} | {{result_1}} |
 | {{changed_area_2}} | {{brief_change_2}} | {{result_2}} |
+</details>
 
-### What's left for high-quality coverage
+<details>
+<summary>What's left for high-quality coverage</summary>
 
 | Area | Add | Why |
 |---|---|---|
@@ -89,25 +64,48 @@ Caught by: {{test_names_or_assertions_that_caught_it}}.
 | {{gap_area_3}} | {{specific_test_to_add_3}} | {{short_reason_3}} |
 
 Test quality: {{brief_at_a_glance_test_quality_comment}}.
+</details>
 
-### Coverage + mutation score
+<details>
+<summary>✓ {{final_caught_count}} mutations caught ({{newly_fixed_count}} newly fixed)</summary>
 
-| State | Targeted suite | Line coverage | Branch coverage | Mutation kill rate | Survived |
-|---|---:|---:|---:|---:|---:|
-| Initial | `{{initial_suite_pass_rate}}`<br>{{initial_passed_tests}} / {{initial_total_tests}} tests | `{{initial_line_coverage_percent}}`<br>{{initial_covered_lines}} / {{initial_total_lines}} lines | `{{initial_branch_coverage_percent}}`<br>{{initial_covered_branches}} / {{initial_total_branches}} branches | `{{initial_kill_rate_percent}}`<br>{{initial_killed_mutations}} / {{total_mutations}} killed | `{{initial_survived_rate_percent}}`<br>{{initial_survived_mutations}} / {{total_mutations}} survived |
-| Final | `{{final_suite_pass_rate}}`<br>{{final_passed_tests}} / {{final_total_tests}} tests | `{{final_line_coverage_percent}}`<br>{{final_covered_lines}} / {{final_total_lines}} lines | `{{final_branch_coverage_percent}}`<br>{{final_covered_branches}} / {{final_total_branches}} branches | `{{final_kill_rate_percent}}`<br>{{final_killed_mutations}} / {{total_mutations}} killed | `{{final_survived_rate_percent}}`<br>{{final_survived_mutations}} / {{total_mutations}} survived |
+<!-- Repeat this nested block for each caught or newly fixed mutation. -->
 
-Comments:
+<details>
+<summary>✓ {{caught_mutation_name}}</summary>
+
+{{one_sentence_english_explanation}}
+
+Caught by: {{test_names_or_assertions_that_caught_it}}.
+</details>
+
+</details>
+
+<details>
+<summary>Notes</summary>
 
 - {{coverage_scope_comment}}
 - {{mutation_score_comment}}
 - {{main_surviving_mutation_pattern_comment}}
 - Log: `{{mutation_testing_log_path}}`
+</details>
 
 <details>
 <summary>JA</summary>
 
 {{japanese_summary_translation}}
+
+<!-- Translate all remaining uncaught mutations. If none, write: 修正後に生存ミューテーションなし。 -->
+
+<details>
+<summary>❌ {{japanese_surviving_mutation_name}}</summary>
+
+| 観点 | 詳細 |
+|---|---|
+| ギャップ | {{short_japanese_gap}} |
+| 変異内容 | {{japanese_mutation_description}} |
+| リスク | {{japanese_risk_description}} |
+</details>
 
 変更内容:
 
@@ -126,12 +124,23 @@ Comments:
 
 テスト品質: {{japanese_at_a_glance_test_quality_comment}}。
 
-カバレッジとミューテーションスコア:
+<details>
+<summary>✓ {{final_caught_count}} 検出済みミューテーション</summary>
 
-| 状態 | 対象テストスイート | 行カバレッジ | ブランチカバレッジ | ミューテーション kill rate | 生存 |
+<details>
+<summary>✓ {{japanese_caught_mutation_name}}</summary>
+
+{{one_sentence_japanese_explanation}}
+
+検出テスト: {{japanese_test_names_or_assertions}}。
+</details>
+
+</details>
+
+| 状態 | テスト | 行 | ブランチ | kill rate | 生存 |
 |---|---:|---:|---:|---:|---:|
-| 初期 | `{{initial_suite_pass_rate}}`<br>{{initial_passed_tests}} / {{initial_total_tests}} テスト | `{{initial_line_coverage_percent}}`<br>{{initial_covered_lines}} / {{initial_total_lines}} 行 | `{{initial_branch_coverage_percent}}`<br>{{initial_covered_branches}} / {{initial_total_branches}} ブランチ | `{{initial_kill_rate_percent}}`<br>{{initial_killed_mutations}} / {{total_mutations}} 検出 | `{{initial_survived_rate_percent}}`<br>{{initial_survived_mutations}} / {{total_mutations}} 生存 |
-| 最終 | `{{final_suite_pass_rate}}`<br>{{final_passed_tests}} / {{final_total_tests}} テスト | `{{final_line_coverage_percent}}`<br>{{final_covered_lines}} / {{final_total_lines}} 行 | `{{final_branch_coverage_percent}}`<br>{{final_covered_branches}} / {{final_total_branches}} ブランチ | `{{final_kill_rate_percent}}`<br>{{final_killed_mutations}} / {{total_mutations}} 検出 | `{{final_survived_rate_percent}}`<br>{{final_survived_mutations}} / {{total_mutations}} 生存 |
+| 初期 | {{initial_passed_tests}} | `{{initial_line_coverage_percent}}` | `{{initial_branch_coverage_percent}}` | `{{initial_kill_rate_percent}}` | {{initial_survived}} |
+| 最終 | {{final_passed_tests}} | `{{final_line_coverage_percent}}` | `{{final_branch_coverage_percent}}` | `{{final_kill_rate_percent}}` | {{final_survived}} |
 
 補足:
 
@@ -146,14 +155,12 @@ Comments:
 
 ## Style rules
 
-- Default visible content is English only.
-- Put remaining uncaught/surviving mutations first.
-- Use `❌` for remaining uncaught mutation accordions.
-- Use `✓` only for individual fixed/caught mutations, never on the parent accordion.
-- Each expanded remaining uncaught finding has: English table (`Finding / Details`), divider (`---`), Japanese table under `#### JA`.
-- Fixed/caught mutations are collapsed under one parent accordion.
-- Bottom `JA` accordion translates: summary, changes made, high-quality coverage next steps, test-quality comment, coverage + mutation score table, and comments.
-- Keep everything brief and at-a-glance.
-- Include both initial and final state when fixes are made.
-- Mention what Devin fixed to close the gaps.
+- **Always visible:** header stats, remaining uncaught mutations, summary, coverage table.
+- **Always collapsed (`<details>`):** changes made, what's left, caught mutations, notes, JA.
+- Remaining uncaught mutations come first after the summary stats — they are the actionable items.
+- Use `❌` for remaining uncaught mutation accordions, `✓` for caught.
+- Keep everything brief. One sentence per mutation explanation.
+- The Coverage table uses a compact Initial/Final column layout — no `<br>` tags or raw line counts.
+- Default visible content is English only. All Japanese content goes in the bottom `JA` accordion.
+- The `JA` section must include translations of **all** sections: summary, remaining uncaught mutations, changes made, what's left, caught mutations, coverage table, and notes.
 - Use GitHub-native markdown only: tables, `<details><summary>` accordions, no screenshots, no external formatting dependencies.
