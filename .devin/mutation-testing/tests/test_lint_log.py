@@ -419,3 +419,54 @@ def test_main_handles_multiple_paths(
         meta=_make_meta(status="done"),
     )
     assert lint_log_module.main([str(good), str(bad)]) == 1
+
+
+def test_lint_reports_coverage_missing_top_keys(
+    lint_log_module: ModuleType, tmp_path: Path
+) -> None:
+    state = {
+        "targeted_tests": {},
+        "coverage": {"line": DEFAULT_STATE["coverage"]["line"]},  # branch missing
+        "mutation_testing": DEFAULT_STATE["mutation_testing"],
+    }
+    meta = _make_meta(initial_state=state)
+    path = _write_log(tmp_path, meta=meta)
+    errors = lint_log_module.lint(path)
+    assert any(
+        "initial_state.coverage missing keys" in e and "branch" in e for e in errors
+    )
+
+
+def test_lint_reports_non_mapping_coverage_axis(
+    lint_log_module: ModuleType, tmp_path: Path
+) -> None:
+    state = {
+        "targeted_tests": {},
+        "coverage": {
+            "line": DEFAULT_STATE["coverage"]["line"],
+            "branch": "not a mapping",
+        },
+        "mutation_testing": DEFAULT_STATE["mutation_testing"],
+    }
+    meta = _make_meta(initial_state=state)
+    path = _write_log(tmp_path, meta=meta)
+    errors = lint_log_module.lint(path)
+    assert any(
+        "initial_state.coverage.branch must be a mapping" in e for e in errors
+    )
+
+
+def test_lint_reports_non_mapping_mutation_testing(
+    lint_log_module: ModuleType, tmp_path: Path
+) -> None:
+    state = {
+        "targeted_tests": {},
+        "coverage": DEFAULT_STATE["coverage"],
+        "mutation_testing": [1, 2, 3],
+    }
+    meta = _make_meta(initial_state=state)
+    path = _write_log(tmp_path, meta=meta)
+    errors = lint_log_module.lint(path)
+    assert any(
+        "initial_state.mutation_testing must be a mapping" in e for e in errors
+    )

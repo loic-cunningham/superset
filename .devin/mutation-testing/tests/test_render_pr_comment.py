@@ -382,3 +382,83 @@ def test_main_returns_two_when_payload_invalid(
     assert rc == 2
     captured = capsys.readouterr()
     assert "mode must be" in captured.err
+
+
+def test_main_writes_to_stdout_when_no_out_path(
+    render_pr_comment_module: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload_path = tmp_path / "results.json"
+    payload_path.write_text(json.dumps(_payload()))
+    rc = render_pr_comment_module.main([str(payload_path)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "## Mutation testing — Demo PR" in captured.out
+    # The renderer must not produce a trailing newline beyond what the
+    # template adds (the template body ends with the JA `</details>` block).
+    assert captured.out.endswith("</details>\n") or captured.out.endswith(
+        "</details>"
+    )
+
+
+def test_render_caught_block_skips_entry_without_ja_data_when_japanese(
+    render_pr_comment_module: ModuleType,
+) -> None:
+    """JA pass: entries that lack a ``ja`` block are skipped, not rendered."""
+    out = render_pr_comment_module._render_caught_block(
+        [
+            {
+                "name": "only english",
+                "explanation": "e",
+                "caught_by": "c",
+                "newly_fixed": False,
+                # No 'ja' key on purpose.
+            },
+            {
+                "name": "both",
+                "explanation": "e2",
+                "caught_by": "c2",
+                "newly_fixed": False,
+                "ja": {
+                    "name": "両方",
+                    "explanation": "説明",
+                    "caught_by": "検出",
+                },
+            },
+        ],
+        japanese=True,
+    )
+    assert "両方" in out
+    assert "only english" not in out
+
+
+def test_render_surviving_block_skips_entry_without_ja_data_when_japanese(
+    render_pr_comment_module: ModuleType,
+) -> None:
+    out = render_pr_comment_module._render_surviving_block(
+        [
+            {
+                "name": "english only",
+                "gap": "g",
+                "mutation": "m",
+                "risk": "r",
+                # No 'ja' key.
+            },
+            {
+                "name": "both",
+                "gap": "g",
+                "mutation": "m",
+                "risk": "r",
+                "ja": {
+                    "name": "日本語",
+                    "gap": "g",
+                    "mutation": "m",
+                    "risk": "r",
+                },
+            },
+        ],
+        japanese=True,
+    )
+    assert "日本語" in out
+    assert "english only" not in out

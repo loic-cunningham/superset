@@ -1,0 +1,237 @@
+# Mutation spec for PR #28 — chore: clean up mutation testing framework
+#
+# All mutations target the four Python scripts under
+# .devin/mutation-testing/scripts/. The foundation test suite under
+# .devin/mutation-testing/tests/ is the only consumer of these scripts and
+# therefore the only suite we exercise.
+#
+# The ``indent: N`` field prepends N spaces to every non-empty line of
+# ``old`` and ``new`` so the YAML stays flush-left.
+
+targets:
+  - path: .devin/mutation-testing/scripts/lint_log.py
+  - path: .devin/mutation-testing/scripts/mutation_runner.py
+  - path: .devin/mutation-testing/scripts/render_pr_comment.py
+  - path: .devin/mutation-testing/scripts/coverage_summary.py
+
+test_paths:
+  - .devin/mutation-testing/tests/
+
+mutations:
+
+  # ----- lint_log.py: REQUIRED_SECTIONS guards (this PR's functional change)
+  - id: M1
+    description: "lint_log: drop the newly added 'Weak spot analysis' required section"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    indent: 4
+    old: |
+      "Initial targeted coverage",
+      "Weak spot analysis",
+      "Initial mutation plan",
+    new: |
+      "Initial targeted coverage",
+      "Initial mutation plan",
+
+  - id: M2
+    description: "lint_log: drop the newly added 'Mutation quality self-assessment' required section"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    indent: 4
+    old: |
+      "What's left for high-quality coverage",
+      "Mutation quality self-assessment",
+    new: |
+      "What's left for high-quality coverage",
+
+  # ----- lint_log.py: validation guards (gap mutations)
+  - id: M3
+    description: "lint_log: accept any status by inverting the guard"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    indent: 4
+    old: |
+      if status not in {"in_progress", "completed"}:
+          errors.append(f"status must be in_progress|completed, got {status!r}")
+    new: |
+      if status in {"in_progress", "completed"}:
+          errors.append(f"status must be in_progress|completed, got {status!r}")
+
+  - id: M4
+    description: "lint_log: rerun_type guard accepts only 'full' (partial enum coverage)"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    indent: 8
+    old: |
+      if mt.get("rerun_type") not in {"full", "survivor_focused"}:
+    new: |
+      if mt.get("rerun_type") not in {"full"}:
+
+  - id: M5
+    description: "lint_log: section ordering check never reports out-of-order"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    indent: 8
+    old: |
+      if idx < last_seen:
+          errors.append(
+              f"section '## {required}' is out of order "
+              "(should follow the previous required section)"
+          )
+      last_seen = idx
+    new: |
+      last_seen = idx
+
+  # ----- lint_log.py: removed top-level key from required set
+  - id: M6
+    description: "lint_log: drop 'artifacts' from REQUIRED_TOP_KEYS"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    indent: 4
+    old: |
+      "commits",
+      "artifacts",
+    new: |
+      "commits",
+
+  # ----- mutation_runner.py: data integrity (preprocessing/normalization)
+  - id: M7
+    description: "mutation_runner: _apply_indent applies prefix to empty lines too"
+    file: .devin/mutation-testing/scripts/mutation_runner.py
+    indent: 4
+    old: |
+      out = [prefix + line if line else line for line in lines]
+    new: |
+      out = [prefix + line for line in lines]
+
+  - id: M8
+    description: "mutation_runner: _apply_mutation no longer enforces uniqueness"
+    file: .devin/mutation-testing/scripts/mutation_runner.py
+    indent: 4
+    old: |
+      if count > 1:
+          raise RuntimeError(
+              f"mutation old-string appears {count} times in "
+              f"{file_path.relative_to(REPO_ROOT)} (must be unique)"
+          )
+      file_path.write_text(text.replace(old_indented, new_indented, 1))
+    new: |
+      file_path.write_text(text.replace(old_indented, new_indented, 1))
+
+  # ----- mutation_runner.py: control flow / classification
+  - id: M9
+    description: "mutation_runner: _classify swaps killed/survived priority"
+    file: .devin/mutation-testing/scripts/mutation_runner.py
+    indent: 0
+    old: |
+      def _classify(passed: int, failed: int) -> str:
+          if failed > 0:
+              return "killed"
+          if passed > 0:
+              return "survived"
+          return "error"
+    new: |
+      def _classify(passed: int, failed: int) -> str:
+          if passed > 0:
+              return "survived"
+          if failed > 0:
+              return "killed"
+          return "error"
+
+  # ----- mutation_runner.py: pytest output parsing case-sensitivity
+  - id: M10
+    description: "mutation_runner: _FAILED_LINE_RE matches lowercase 'failed'"
+    file: .devin/mutation-testing/scripts/mutation_runner.py
+    indent: 0
+    old: |
+      _FAILED_LINE_RE = re.compile(r"^FAILED\s+(\S+)")
+    new: |
+      _FAILED_LINE_RE = re.compile(r"^[Ff]ailed\s+(\S+)")
+
+  # ----- render_pr_comment.py: validation guards
+  - id: M11
+    description: "render_pr_comment: skip mode validation"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 4
+    old: |
+      mode = payload.get("mode", "final")
+      if mode not in {"checkpoint", "final"}:
+          raise ValueError(f"mode must be 'checkpoint' or 'final', got {mode!r}")
+    new: |
+      mode = payload.get("mode", "final")
+
+  # ----- render_pr_comment.py: division-by-zero safety
+  - id: M12
+    description: "render_pr_comment: _kill_rate removes zero-total guard"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      def _kill_rate(killed: int, total: int) -> int:
+          return round(killed / total * 100) if total else 0
+    new: |
+      def _kill_rate(killed: int, total: int) -> int:
+          return round(killed / total * 100)
+
+  # ----- render_pr_comment.py: empty-surviving output contract
+  - id: M13
+    description: "render_pr_comment: empty surviving block returns empty string"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 12
+    old: |
+      else "<!-- No surviving mutations remained after targeted fixes. -->"
+    new: |
+      else ""
+
+  # ----- coverage_summary.py: output contract
+  - id: M14
+    description: "coverage_summary: _per_file_entries skips path sort"
+    file: .devin/mutation-testing/scripts/coverage_summary.py
+    indent: 4
+    old: |
+      for path, file_data in sorted(cov_data.get("files", {}).items()):
+    new: |
+      for path, file_data in cov_data.get("files", {}).items():
+
+  # ----- coverage_summary.py: rounding boundary
+  - id: M15
+    description: "coverage_summary: _pct uses int() (truncation) instead of round()"
+    file: .devin/mutation-testing/scripts/coverage_summary.py
+    indent: 4
+    old: |
+      return int(round(num))
+    new: |
+      return int(num)
+
+  # ----- Improve-phase mutations targeting newly-covered branches
+  - id: M16
+    description: "lint_log: non-mapping coverage axis bypasses dict assertion"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    indent: 20
+    old: |
+      errors.append(f"{state_name}.coverage.{axis} must be a mapping")
+    new: |
+      pass
+
+  - id: M17
+    description: "render_pr_comment: caught block renders entry even without ja data when japanese=True"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 8
+    old: |
+      data = entry.get("ja") if japanese else entry
+      if not data:
+          continue
+      suffix = " (newly fixed)" if entry.get("newly_fixed") and not japanese else ""
+    new: |
+      data = entry.get("ja") if japanese else entry
+      if data is None:
+          data = entry
+      suffix = " (newly fixed)" if entry.get("newly_fixed") and not japanese else ""
+
+  - id: M18
+    description: "render_pr_comment: main() writes to file even when --out is omitted"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 4
+    old: |
+      if args.out:
+          args.out.write_text(rendered)
+          print(f"[render_pr_comment] wrote {args.out}", file=sys.stderr)
+      else:
+          sys.stdout.write(rendered)
+    new: |
+      if args.out:
+          args.out.write_text(rendered)
+          print(f"[render_pr_comment] wrote {args.out}", file=sys.stderr)
