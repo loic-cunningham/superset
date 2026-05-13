@@ -71,7 +71,8 @@ final_state:
     kill_rate: 100
     rerun_type: "full"
 
-commits: []
+commits:
+  - "61462da273ef6891671427faf87f26c87fadaa90"
 
 artifacts:
   pr_comment_url: "https://github.com/loic-cunningham/superset/pull/15"
