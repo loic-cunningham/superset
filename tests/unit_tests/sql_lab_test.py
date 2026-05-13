@@ -349,6 +349,8 @@ def test_get_predicates_for_table_excludes_self(mocker: MockerFixture) -> None:
     its own RLS injected into the inner SQL (would double-apply on top of the
     outer WHERE). Regression test for the physical→virtual conversion bug.
     """
+    from sqlalchemy.sql import operators
+
     database = mocker.MagicMock()
     db = mocker.patch("superset.utils.rls.db")
     db.session.query().filter().one_or_none.return_value = None
@@ -363,3 +365,93 @@ def test_get_predicates_for_table_excludes_self(mocker: MockerFixture) -> None:
     filter_call = db.session.query().filter.call_args
     and_clause = filter_call.args[0]
     assert len(and_clause.clauses) == 5
+    # ``and_(*filters)`` (not ``or_``): the wrapping BooleanClauseList must use
+    # the AND operator — swapping to OR would silently leak RLS from unrelated
+    # rows that happen to match a single filter clause.
+    assert and_clause.operator is operators.and_
+    # Last clause is the exclusion: ``SqlaTable.id != <exclude_dataset_id>``.
+    exclusion_clause = and_clause.clauses[-1]
+    # Operator must be ``!=`` (operators.ne), not ``==``: flipping it would
+    # match *only* the dataset's own row.
+    assert exclusion_clause.operator is operators.ne
+    # Left operand is ``SqlaTable.id`` (column key "id"); a different column
+    # would exclude the wrong dataset attribute.
+    assert exclusion_clause.left.key == "id"
+    # Right operand is the passed-in id, bound to 42; hard-coding it (e.g.
+    # ``!= 0``) would silently no-op for every real dataset.
+    assert exclusion_clause.right.value == 42
+
+
+def test_apply_rls_propagates_exclude_dataset_id(mocker: MockerFixture) -> None:
+    """
+    ``apply_rls`` must forward ``exclude_dataset_id`` into every
+    ``get_predicates_for_table`` call — otherwise the inner-SQL lookup for
+    a virtual dataset can still match itself and double-apply RLS.
+    """
+    database = mocker.MagicMock()
+    database.get_default_schema_for_query.return_value = "public"
+    database.get_default_catalog.return_value = "examples"
+    database.db_engine_spec = PostgresEngineSpec
+    get_predicates = mocker.patch(
+        "superset.utils.rls.get_predicates_for_table",
+        side_effect=[["c1 = 1"], ["c2 = 2"]],
+    )
+
+    parsed_statement = SQLStatement("SELECT * FROM t1, t2", "postgresql")
+    parsed_statement.tables = sorted(
+        parsed_statement.tables, key=lambda x: x.table
+    )  # type: ignore
+
+    apply_rls(database, "examples", "public", parsed_statement, exclude_dataset_id=42)
+
+    # Both calls must carry the same non-default ``exclude_dataset_id`` we
+    # passed in — the propagation must not silently drop or rewrite it.
+    get_predicates.assert_has_calls(
+        [
+            mocker.call(
+                Table("t1", "public", "examples"),
+                database,
+                "examples",
+                exclude_dataset_id=42,
+            ),
+            mocker.call(
+                Table("t2", "public", "examples"),
+                database,
+                "examples",
+                exclude_dataset_id=42,
+            ),
+        ]
+    )
+
+
+def test_collect_rls_predicates_for_sql_propagates_exclude_dataset_id(
+    mocker: MockerFixture,
+) -> None:
+    """
+    ``collect_rls_predicates_for_sql`` (used to build virtual-dataset cache
+    keys) must forward ``exclude_dataset_id`` to ``get_predicates_for_table``
+    so the cache key matches what will actually be applied at query time.
+    """
+    from superset.utils.rls import collect_rls_predicates_for_sql
+
+    database = mocker.MagicMock()
+    database.db_engine_spec.engine = "postgresql"
+    database.get_default_catalog.return_value = "examples"
+    get_predicates = mocker.patch(
+        "superset.utils.rls.get_predicates_for_table",
+        return_value=["c1 = 1"],
+    )
+
+    collect_rls_predicates_for_sql(
+        "SELECT * FROM orders",
+        database,
+        "examples",
+        "public",
+        exclude_dataset_id=42,
+    )
+
+    # At least one call must have happened (the parsed SQL has one table) and
+    # every call must carry ``exclude_dataset_id=42``.
+    assert get_predicates.call_count >= 1
+    for call in get_predicates.call_args_list:
+        assert call.kwargs.get("exclude_dataset_id") == 42
