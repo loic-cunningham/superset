@@ -1368,3 +1368,70 @@ class TestDestructiveDDLBlocking:
             assert data["success"] is False
             assert "Destructive DDL" in data["error"]
             ddl_mocks.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ddl_check_uses_real_database_engine(self, ddl_mocks, mcp_server):
+        """
+        The destructive-DDL check must parse SQL with the real database engine
+        (``database.db_engine_spec.engine``), not a hard-coded or default
+        dialect. A regression that swaps the dialect to something generic could
+        silently bypass dialect-specific destructive detection (e.g., Kusto).
+        """
+        import sys
+
+        ddl_mocks.db_engine_spec.engine = "snowflake"
+
+        execute_sql_mod = sys.modules["superset.mcp_service.sql_lab.tool.execute_sql"]
+        real_sql_script = execute_sql_mod.SQLScript
+
+        with patch.object(
+            execute_sql_mod, "SQLScript", wraps=real_sql_script
+        ) as sql_script_spy:
+            async with Client(mcp_server) as client:
+                await client.call_tool(
+                    "execute_sql",
+                    {"request": {"database_id": 1, "sql": "DROP TABLE t"}},
+                )
+
+        sql_script_spy.assert_called_once()
+        call_args = sql_script_spy.call_args
+        engine_arg = (
+            call_args.kwargs["engine"]
+            if "engine" in call_args.kwargs
+            else call_args.args[1]
+        )
+        assert engine_arg == "snowflake"
+
+    @pytest.mark.asyncio
+    async def test_templated_destructive_sql_blocked_as_ddl(
+        self, ddl_mocks, mcp_server
+    ):
+        """
+        Templated SQL must be rendered *before* the destructive-DDL check, so a
+        template that expands to ``DROP TABLE x`` is rejected with the
+        destructive-DDL error (not the generic parse-error fallback).
+        """
+        with patch(
+            "superset.jinja_context.get_template_processor"
+        ) as get_tp:
+            tp = Mock()
+            tp.process_template.return_value = "DROP TABLE birth_names"
+            get_tp.return_value = tp
+
+            async with Client(mcp_server) as client:
+                result = await client.call_tool(
+                    "execute_sql",
+                    {
+                        "request": {
+                            "database_id": 1,
+                            "sql": "DROP TABLE {{ name }}",
+                            "template_params": {"name": "birth_names"},
+                        }
+                    },
+                )
+
+        data = result.structured_content
+        assert data["success"] is False
+        assert "Destructive DDL" in data["error"]
+        assert "could not be parsed" not in data["error"]
+        ddl_mocks.execute.assert_not_called()

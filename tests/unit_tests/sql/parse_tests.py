@@ -1350,6 +1350,20 @@ def test_has_destructive(sql: str, expected: bool) -> None:
         (".alter table T (col:string)", True),
         (".show tables", False),
         ("T | count", False),
+        # Non-space separators after the destructive verb. Detection must not
+        # require a trailing space, so a regression that pins it to ".drop " /
+        # ".alter " would let these through.
+        (".drop;", True),
+        (".drop\ttable T", True),
+        (".drop\ntable T", True),
+        (".alter;", True),
+        # Case-insensitive matching. Kusto KQL is case-insensitive, so the
+        # destructive check must normalize before comparing — dropping the
+        # ``.lower()`` would let ``.DROP``/``.Alter`` through.
+        (".DROP table T", True),
+        (".Drop table T", True),
+        (".ALTER table T (col:string)", True),
+        (".Alter table T (col:string)", True),
     ],
 )
 def test_kusto_is_destructive(kql: str, expected: bool) -> None:
@@ -1359,6 +1373,34 @@ def test_kusto_is_destructive(kql: str, expected: bool) -> None:
     from superset.sql.parse import KustoKQLStatement
 
     assert KustoKQLStatement(kql, "kustokql").is_destructive() == expected
+
+
+def test_alter_as_command_is_destructive() -> None:
+    """
+    Some dialects (e.g., Oracle, T-SQL) parse ALTER variants that sqlglot does
+    not model as ``exp.Alter`` and instead fall back to a generic ``exp.Command``
+    with ``name="ALTER"``. The destructive check must catch this fallback so
+    that ``ALTER SESSION SET ...`` / ``ALTER USER ...`` / ``ALTER SYSTEM SET ...``
+    on those dialects is still blocked.
+    """
+    from sqlglot import exp
+
+    from superset.sql.parse import SQLStatement
+
+    for dialect, sql in [
+        ("oracle", 'ALTER SESSION SET TIME_ZONE = "UTC"'),
+        ("oracle", "ALTER USER foo IDENTIFIED BY bar"),
+        ("oracle", "ALTER SYSTEM SET log_level = INFO"),
+        ("tsql", 'ALTER SESSION SET TIME_ZONE = "UTC"'),
+        ("mysql", "ALTER USER foo IDENTIFIED BY bar"),
+    ]:
+        statement = SQLStatement(sql, dialect)
+        assert isinstance(statement._parsed, exp.Command)
+        assert statement._parsed.name == "ALTER"
+        assert statement.is_destructive() is True, (
+            f"ALTER parsed as exp.Command for {dialect!r} must be destructive: "
+            f"{sql!r}"
+        )
 
 
 def test_optimize() -> None:
