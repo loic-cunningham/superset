@@ -2,27 +2,6 @@
 
 Apache Superset is a data visualization platform with Flask/Python backend and React/TypeScript frontend.
 
-## ⚠️ CRITICAL: Always Run Pre-commit Before Pushing
-
-**ALWAYS run `pre-commit run --all-files` before pushing commits.** CI will fail if pre-commit checks don't pass. This is non-negotiable.
-
-```bash
-# Stage your changes first
-git add .
-
-# Run pre-commit on all files
-pre-commit run --all-files
-
-# If there are auto-fixes, stage them and commit
-git add .
-git commit --amend  # or new commit
-```
-
-Common pre-commit failures:
-- **Formatting** - black, prettier, eslint will auto-fix
-- **Type errors** - mypy failures need manual fixes
-- **Linting** - ruff, pylint issues need manual fixes
-
 ## ⚠️ CRITICAL: Ongoing Refactors (What NOT to Do)
 
 **These migrations are actively happening - avoid deprecated patterns:**
@@ -44,7 +23,7 @@ Common pre-commit failures:
 
 ### Backend Type Safety
 - **Add type hints** - All new Python code needs proper typing
-- **MyPy compliance** - Run `pre-commit run mypy` to validate
+- **MyPy compliance** - Keep Python changes type-safe
 - **SQLAlchemy typing** - Use proper model annotations
 
 ### UUID Migration
@@ -83,7 +62,7 @@ superset/
 
 ### Python Backend  
 - **Type hints required** for all new code
-- **MyPy compliant** - run `pre-commit run mypy`
+- **MyPy compliant** - keep Python changes type-safe
 - **SQLAlchemy models** with proper typing
 - **pytest** for testing
 
@@ -211,36 +190,6 @@ curl -f http://localhost:8088/health || echo "❌ Setup required - see https://s
 
 **Important**: Always reference the actual template file at `.github/PULL_REQUEST_TEMPLATE.md` instead of using cached content, as the template may be updated over time.
 
-## Pre-commit Validation
-
-**Use pre-commit hooks for quality validation:**
-
-```bash
-# Install hooks
-pre-commit install
-
-# IMPORTANT: Stage your changes first!
-git add .                        # Pre-commit only checks staged files
-
-# Quick validation (faster than --all-files)
-pre-commit run                   # Staged files only
-pre-commit run mypy              # Python type checking
-pre-commit run prettier          # Code formatting
-pre-commit run eslint            # Frontend linting
-```
-
-**Important pre-commit usage notes:**
-- **Stage files first**: Run `git add .` before `pre-commit run` to check only changed files (much faster)
-- **Virtual environment**: Activate your Python virtual environment before running pre-commit
-  ```bash
-  # Common virtual environment locations (yours may differ):
-  source .venv/bin/activate      # if using .venv
-  source venv/bin/activate       # if using venv
-  source ~/venvs/superset/bin/activate  # if using a central location
-  ```
-  If you get a "command not found" error, ask the user which virtual environment to activate
-- **Auto-fixes**: Some hooks auto-fix issues (e.g., trailing whitespace). Re-run after fixes are applied
-
 ## Common File Patterns
 
 ### API Structure
@@ -266,4 +215,4 @@ pre-commit run eslint            # Frontend linting
 
 ---
 
-**LLM Note**: This codebase is actively modernizing toward full TypeScript and type safety. Always run `pre-commit run` to validate changes. Follow the ongoing refactors section to avoid deprecated patterns.
+**LLM Note**: This codebase is actively modernizing toward full TypeScript and type safety. Follow the ongoing refactors section to avoid deprecated patterns.

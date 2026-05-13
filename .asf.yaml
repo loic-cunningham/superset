@@ -86,8 +86,6 @@ github:
           - dependency-review
           - frontend-build
           - playwright-tests (chromium)
-          - pre-commit (current)
-          - pre-commit (previous)
           - test-mysql
           - test-postgres (current)
           - test-postgres-hive

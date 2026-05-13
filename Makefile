@@ -18,9 +18,9 @@
 # Python version installed; we need 3.10-3.11
 PYTHON=`command -v python3.11 || command -v python3.10`
 
-.PHONY: install superset venv pre-commit up down logs ps nuke ports open
+.PHONY: install superset venv up down logs ps nuke ports open
 
-install: superset pre-commit
+install: superset
 
 superset:
 	# Install external dependencies
@@ -77,15 +77,10 @@ venv:
 activate:
 	. venv/bin/activate
 
-pre-commit:
-	# setup pre commit dependencies
-	pip3 install -r requirements/development.txt
-	pre-commit install
-
 format: py-format js-format
 
-py-format: pre-commit
-	pre-commit run black --all-files
+py-format:
+	ruff format .
 
 js-format:
 	cd superset-frontend; npm run prettier

@@ -64,7 +64,7 @@ Everything you need to contribute to the Apache Superset project. This section i
 - **Backend**: Flask, SQLAlchemy, Celery, Redis
 - **Build Tools**: Webpack, Babel, npm/yarn
 - **Testing**: Jest, Pytest, Playwright
-- **CI/CD**: GitHub Actions, pre-commit
+- **CI/CD**: GitHub Actions
 
 ## Community
 

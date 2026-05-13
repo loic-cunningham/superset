@@ -352,8 +352,6 @@ ruff check .
 ruff check --fix .
 ```
 
-Pre-commit hooks run automatically on `git commit` if installed.
-
 ### TypeScript / JavaScript
 
 We use a hybrid linting approach combining OXC (Oxidation Compiler) for standard rules and a custom AST-based checker for Superset-specific patterns.
@@ -499,7 +497,7 @@ Add to your shell profile:
 ```bash
 alias sdev='FLASK_ENV=development superset run -p 8088 --with-threads --reload'
 alias stest='pytest tests/unit_tests'
-alias slint='pre-commit run --all-files'
+alias slint='ruff check .'
 alias sfront='cd superset-frontend && npm run dev-server'
 ```
 

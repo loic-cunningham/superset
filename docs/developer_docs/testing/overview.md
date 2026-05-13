@@ -108,7 +108,7 @@ npm run test:coverage
 ### Continuous Testing
 - Run tests automatically on code changes
 - Integrate testing into development workflow
-- Use pre-commit hooks for test validation
+- Use focused test commands for validation
 
 ## Getting Started
 
