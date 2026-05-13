@@ -1,33 +1,47 @@
-name: Launch Devin on PR
+name: Devin Mutation Testing
 
 on:
+  pull_request:
+    types: [opened]
+
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Open PR number for Devin to work on"
+        description: "PR number to run mutation testing on"
         required: true
         type: number
-      instructions:
-        description: "Custom instructions for Devin"
-        required: true
-        type: string
 
 jobs:
   launch-devin:
-    name: Launch Devin
+    name: Launch Devin Mutation Testing
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
 
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          sparse-checkout: |
+            .devin/docs/
+
+      - name: Resolve PR number
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "pr_number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pr_number=${{ github.event.inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Prepare Devin prompt
         id: prepare
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          CUSTOM_INSTRUCTIONS: ${{ github.event.inputs.instructions }}
-          PR_NUMBER: ${{ github.event.inputs.pr_number }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         with:
           script: |
             const fs = require('fs');
@@ -35,17 +49,6 @@ jobs:
             const prNumber = Number(process.env.PR_NUMBER);
             if (!Number.isInteger(prNumber) || prNumber <= 0) {
               core.setFailed(`Invalid PR number: ${process.env.PR_NUMBER}`);
-              return;
-            }
-
-            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              username: context.actor,
-            });
-
-            if (!['admin', 'maintain', 'write'].includes(permission.permission)) {
-              core.setFailed(`@${context.actor} does not have permission to launch Devin for this repository.`);
               return;
             }
 
@@ -60,35 +63,58 @@ jobs:
               return;
             }
 
-            const instructions = process.env.CUSTOM_INSTRUCTIONS.trim();
-            if (!instructions) {
-              core.setFailed('Custom instructions are required.');
-              return;
+            // Read the mutation testing instructions and all 3 templates
+            const docsDir = '.devin/docs';
+            const instructionFiles = [
+              'mutation_testing_agent_handoff.md',
+              'template_01_test_foundation.md',
+              'template_02_mutation_testing.md',
+              'template_03_final_report.md',
+            ];
+
+            const instructions = [];
+            for (const file of instructionFiles) {
+              const filePath = `${docsDir}/${file}`;
+              if (!fs.existsSync(filePath)) {
+                core.setFailed(`Required instruction file not found: ${filePath}`);
+                return;
+              }
+              const content = fs.readFileSync(filePath, 'utf8');
+              instructions.push(`--- BEGIN ${file} ---\n${content}\n--- END ${file} ---`);
             }
 
+            const repoFullName = `${context.repo.owner}/${context.repo.repo}`;
             const prompt = [
-              `Repository: ${context.repo.owner}/${context.repo.repo}`,
+              `Repository: ${repoFullName}`,
               `Pull request: #${pr.number} - ${pr.title}`,
               `Pull request URL: ${pr.html_url}`,
               `Base branch: ${pr.base.ref}`,
               `Head branch: ${pr.head.ref}`,
               `Head repository: ${pr.head.repo.full_name}`,
               `Head SHA: ${pr.head.sha}`,
-              `Triggered by: @${context.actor}`,
               '',
-              'Work directly on this open PR. Review the PR diff and context, follow the custom instructions below, push any necessary commits to the PR branch if permitted, and comment on the PR with a concise summary when finished.',
+              'You are running the mutation testing workflow on this PR. The Devin GitHub integration is already authenticated for this repo, so plain git commands work without any extra setup. Check out the PR branch with:',
+              '```',
+              `git fetch origin pull/${pr.number}/head:${pr.head.ref}`,
+              `git checkout ${pr.head.ref}`,
+              '```',
               '',
-              'Custom instructions:',
-              instructions,
+              'Do NOT run `gh auth login`, `gh auth setup-git`, `gh pr checkout`, `git remote set-url`, or `export GH_TOKEN=...`. Those override the proxy credential helper and break git auth in this environment. Push commits with `git push origin <branch>` and post PR comments with the built-in `git_comment` tool.',
+              '',
+              'Follow the full lifecycle (triage → [foundation] → measure → log → improve → verify → commit → report), push commits to the PR branch, and post the final PR comment.',
+              '',
+              'CRITICAL: All outputs (foundation test plan, mutation testing log, PR comments) MUST follow the corresponding templates EXACTLY. These are the ONLY valid formats. Do not create custom formats.',
+              '',
+              ...instructions,
             ].join('\n');
 
             const requestBody = {
               prompt,
-              title: `PR #${pr.number}: ${pr.title}`.slice(0, 80),
-              repos: [`${context.repo.owner}/${context.repo.repo}`],
+              title: `Mutation Testing: PR #${pr.number} — ${pr.title}`.slice(0, 80),
+              repos: [repoFullName],
               tags: [
                 'github-actions',
-                'manual-pr',
+                'mutation-testing',
                 `repo-${context.repo.owner}-${context.repo.repo}`,
                 `pr-${pr.number}`,
               ],
@@ -109,15 +135,12 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-
             const apiKey = process.env.DEVIN_API_KEY;
             const orgId = process.env.DEVIN_ORG_ID;
-
             if (!apiKey || !orgId) {
               core.setFailed('DEVIN_API_KEY and DEVIN_ORG_ID repository secrets are required.');
               return;
             }
-
             const response = await fetch(`https://api.devin.ai/v3/organizations/${encodeURIComponent(orgId)}/sessions`, {
               method: 'POST',
               headers: {
@@ -126,29 +149,20 @@ jobs:
               },
               body: fs.readFileSync('devin-request.json', 'utf8'),
             });
-
             const responseText = await response.text();
             let responseBody;
-            try {
-              responseBody = JSON.parse(responseText);
-            } catch {
-              responseBody = { raw_response: responseText };
-            }
-
+            try { responseBody = JSON.parse(responseText); } catch { responseBody = { raw_response: responseText }; }
             if (!response.ok) {
               core.setFailed(`Devin API request failed with ${response.status}: ${responseText}`);
               return;
             }
-
             fs.writeFileSync('devin-response.json', JSON.stringify(responseBody, null, 2));
-
             const sessionId = responseBody.session_id || '';
             const sessionUrl = responseBody.url || (sessionId ? `https://app.devin.ai/sessions/${sessionId}` : '');
-
             core.setOutput('session_id', sessionId);
             core.setOutput('session_url', sessionUrl);
             await core.summary
-              .addHeading('Devin session launched')
+              .addHeading('Devin Mutation Testing session launched')
               .addLink(sessionUrl || sessionId, sessionUrl || `https://app.devin.ai/sessions/${sessionId}`)
               .write();
 
@@ -165,10 +179,17 @@ jobs:
             const prNumber = Number(process.env.PR_NUMBER);
             const sessionLink = process.env.SESSION_URL || `https://app.devin.ai/sessions/${process.env.SESSION_ID}`;
             const body = [
-              `Devin was launched by @${context.actor} for this PR.`,
+              '🧬 **Devin Mutation Testing** was launched for this PR.',
               '',
               `Session: ${sessionLink}`,
               `Workflow run: ${process.env.RUN_URL}`,
+              '',
+              'Devin will:',
+              '1. Assess existing test coverage (triage)',
+              '2. Create foundation tests if needed',
+              '3. Run targeted mutation testing',
+              '4. Fix surviving mutation gaps and coverage holes',
+              '5. Post a detailed before/after report on this PR',
             ].join('\n');
 
             await github.rest.issues.createComment({
