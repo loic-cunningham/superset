@@ -105,7 +105,8 @@ verifications:
       - "permissions narrowed to `pull-requests: read` (no `issues: write` / `pull-requests: write` remain)"
       - "no `Comment on PR` step remains in the workflow"
 
-commits: []
+commits:
+  - "07d9cf3a01"
 
 artifacts:
   pr_comment_url: ""
