@@ -19,14 +19,10 @@ The `[foundation]` step is conditional — it runs only when the triage phase de
 Produce:
 
 1. A repo-tracked mutation testing log file with YAML front matter.
-2. A GitHub PR comment that shows, at a glance:
-   - what behavior the PR is supposed to protect,
-   - initial targeted coverage,
-   - initial mutation results,
-   - what Devin fixed (both tests and coverage gaps),
-   - final targeted coverage,
-   - final mutation kill rate,
-   - what changed in the PR branch.
+2. **Two or three GitHub PR comments**, posted in order, each rendered by `render_pr_comment.py` (never hand-written) and each carrying a full Japanese (`JA`) mirror:
+   - **C1** — either a short `status` preamble (when Foundation is skipped) or a full `foundation` report (when Foundation runs).
+   - **C2** — the `initial` mutation results checkpoint, with every survivor classified as `pending` (Devin will fix it in Improve) or `≡ dismissed` (functionally equivalent).
+   - **C3** — the `final` report. **Invariant: every survivor from C2 must appear as `✓ killed` or `≡ dismissed`. No `❌` items remain.**
 3. A commit on the PR branch containing:
    - the test/code fixes,
    - the mutation testing log file,
@@ -62,6 +58,29 @@ Success means:
 - If no meaningful gaps are found and coverage is already acceptable, the improve step is a no-op; still log, verify, commit the log, and report.
 - Pre-existing test failures must be identified and excluded via `--deselect`, never counted as mutation kills.
 
+## FORBIDDEN ACTIONS
+
+These are absolute prohibitions. Any one of them voids the run and requires re-doing the affected step.
+
+1. **Do NOT hand-write any PR comment.** Every PR comment posted by this workflow MUST be produced by `render_pr_comment.py` from a structured JSON payload. Drafting markdown directly into `git_comment` or `gh pr comment` is forbidden, even if the markdown looks correct. The renderer is the only sanctioned posting path because it enforces JA mirrors, N/A handling, classification of survivors, and the final-comment invariant.
+2. **Do NOT post a PR comment without a JA mirror.** The renderer rejects payloads missing the `ja` block. If you find yourself reaching for `gh pr comment` to post a quick status update, stop — use `render_pr_comment.py --mode status` instead.
+3. **Do NOT duplicate progression columns to fill the table.** If Final has not been measured yet, use `"N/A"` in those cells. Never copy Initial numbers into Final to make the table look balanced. The renderer rejects mismatched column lengths.
+4. **Do NOT render a `final` comment that still contains `pending` survivors.** Before posting C3, every survivor from C2 must have been either killed by a new test (`resolution: "killed"` with an `added_test`) or dismissed as equivalent (`resolution: "dismissed"` with a `dismissal_reason`). The renderer rejects `pending` in `final` mode — do not work around it; do the work.
+5. **Do NOT classify a survivor as `dismissed` to avoid writing a test.** A mutation is dismissable only when it is functionally equivalent to the original code — no test can distinguish them. Examples: serializer round-trip identity, dead branches in unreachable arms, identity transformations. Each dismissal requires a `dismissal_reason` that explains *why* the mutation is functionally identical and *how* you verified that empirically (e.g., "verified via `model_dump_json()` round-trip"). If you are unsure whether a mutation is equivalent, treat it as `pending` and write the test.
+6. **Do NOT skip the Foundation PR comment when Phase 0b runs.** Posting the `initial` comment before C1 obscures the fact that Devin wrote the tests being scored. If Phase 0b ran, post a `foundation`-mode comment immediately after the foundation commit and before the initial mutation run.
+7. **Do NOT count dismissed mutations in the kill-rate denominator.** Final kill rate is `killed / (total − dismissed)`. The renderer computes this from your `resolved[]` array — do not pre-divide or override it.
+8. **Do NOT post comments out of order.** Order is C1 (status or foundation) → C2 (initial) → C3 (final). Editing an older comment is acceptable only to fix a renderer error in the same comment; never reuse C2's body slot for the final report.
+
+### Correct vs. wrong outputs
+
+| Scenario | Wrong | Correct |
+|---|---|---|
+| Foundation ran; you need the first PR comment. | Skip to `initial` mode and mention foundation in passing. | Post a `foundation`-mode comment first; then later post `initial`. |
+| You ran the initial pass and got 12/14 killed; nothing improved yet. | Hand-write a checkpoint with "Initial=12/14, Final=12/14". | Render `initial` mode — progression table has `N/A` in the Final column slot (or no Final column at all in checkpoint shape). |
+| A mutation is functionally identical to the original code. | Render it as `❌ Remaining uncaught` with `risk: low`. | Classify as `dismissed` with a `dismissal_reason` empirically verified. |
+| You need to tell the user the run has started. | `gh pr comment -F /tmp/i-will-do-stuff.md`. | `render_pr_comment.py --mode status` + post the rendered output. |
+| Final report time and one mutation is still `pending`. | Render `final` and hope no one notices. | Either write the missing test (then `resolution: killed`) or document why it is functionally equivalent (then `resolution: dismissed`). The renderer rejects `pending` in `final`.
+
 ### Mandatory Template Compliance
 
 All structured outputs MUST follow the corresponding template files exactly. These are the **only** valid formats for GitHub comments and repo-tracked logs produced by this workflow. Do not create custom formats, simplified versions, or alternative layouts.
@@ -70,7 +89,7 @@ All structured outputs MUST follow the corresponding template files exactly. The
 |---|---|---|
 | Foundation test plan (Stage 1) | `template_01_test_foundation.md` | Phase 0b — when creating tests from scratch |
 | Repo-tracked mutation log (Stage 2) | `template_02_mutation_testing.md` | Phase 4 (initial) and Phase 10 (final update) |
-| PR comment — checkpoint and final report (Stage 3) | `template_03_final_report.md` | Phase 7 (checkpoint) and Phase 12 (final) |
+| PR comments — four shapes via `mode` (Stage 3) | `template_03_final_report.md` | Phase 1 (`status`), Phase 0b (`foundation`), Phase 7 (`initial`), Phase 12 (`final`) |
 
 Every section, table, accordion, and JA translation block defined in the template must appear in the output. If a section is not applicable (e.g., no remaining uncaught mutations), follow the template's specific guidance for that case — do not omit the section. Refer to the `.example.md` companion files for concrete examples of correctly filled templates.
 
@@ -81,12 +100,12 @@ The mutation-testing lifecycle has a small set of scripts under `.devin/mutation
 | Script | Use at | What it removes |
 |---|---|---|
 | `setup_env.sh` | Phase 0c | Manual apt installs, beartype circular-import patch, nh3 PyO3 upgrade. Idempotent. |
-| `fetch_templates.sh` | Phase 0c | Manually `git show origin/master:.devin/docs/...` for each template. |
+| `fetch_templates.sh` | Phase 0c | Manually `git show origin/master:.devin/mutation-testing/templates/...` for each template (with `.devin/docs/` fallback for legacy branches). |
 | `run_targeted.sh` | Phases 2, 9 (and as the pytest entry point for every other phase) | Forgetting to activate `.venv`, forgetting `PY_KEY_VALUE_DISABLE_BEARTYPE=true`, forgetting PR-specific deselections. |
 | `coverage_summary.py` | Phases 3, 9 | Manually reshaping `pytest --cov-report=json` output into the YAML shape `template_02_mutation_testing.md` expects. |
 | `mutation_runner.py` | Phases 6, 9 | Case-sensitive `failed` grep, silent no-op when a patch can't apply, working-tree pollution on a failed restore. |
 | `lint_log.py` | Phases 4, 10 | Drift between the log file and `template_02_mutation_testing.md` (missing keys, wrong section order, unset `rerun_type`). |
-| `render_pr_comment.py` | Phases 7 (checkpoint), 12 (final) | Hand-writing ~20 KB of nested `<details>` + tables + JA mirror in `template_03_final_report.md`. |
+| `render_pr_comment.py` | Phase 1 (`status`), Phase 0b (`foundation`), Phase 7 (`initial`), Phase 12 (`final`) | Hand-writing ~20 KB of nested `<details>` + tables + JA mirror in `template_03_final_report.md`. Renderer enforces JA mirror, classification, N/A defaults, kill-rate formula, and final-comment invariant. |
 
 ## User-visible Preamble
 
@@ -109,9 +128,21 @@ Keep further updates minimal unless blocked or posting the final report.
 | 3. Improve | Add targeted tests/fixes for surviving mutations, uncovered PR-changed lines, and missing behavioral edge cases. | Focused test/code changes tied to the PR's behavior. |
 | 4. Verify | Prove the improvements work. | Final targeted tests, final coverage, rerun surviving mutations/relevant mutation set. |
 | 5. Commit | Preserve the improvement and long-term index. | Commit containing fixes plus the mutation testing log file; push if required for the PR branch. |
-| 6. Report | Communicate before/after quality clearly. | Final PR comment following `template_03_final_report.md`. |
+| 6. Report | Communicate before/after quality clearly. | Final PR comment (`mode: final`) rendered from `template_03_final_report.md`, with every initial survivor resolved as `✓ killed` or `≡ dismissed`. |
 
 Do not skip or reorder these lifecycle steps. The foundation step may be skipped only when triage determines it is not needed.
+
+## PR-comment posting matrix
+
+There are exactly **three logical comment slots** — C1, C2, C3. Foundation determines whether C1 is short (`status` mode) or full (`foundation` mode). Both flows post all three comments in order.
+
+| Comment slot | Foundation NOT run | Foundation WAS run |
+|---|---|---|
+| **C1** — posted at Phase 1 | `mode: status` (short preamble) | `mode: foundation` (Original → Foundation table) |
+| **C2** — posted at Phase 7 | `mode: initial` (2 cols: Original / Initial-mutation) | `mode: initial` (3 cols: Original / Foundation / Initial-mutation) |
+| **C3** — posted at Phase 12 | `mode: final` (3 cols: Original / Initial-mutation / Final) | `mode: final` (4 cols: Original / Foundation / Initial-mutation / Final) |
+
+Use `render_pr_comment.py` for **every** slot. Posting via `git_comment` or `gh pr comment` with hand-written markdown is forbidden — see the `FORBIDDEN ACTIONS` section.
 
 ---
 
@@ -195,6 +226,54 @@ git add <new test files>
 git commit -m "test: add foundation tests for <feature>"
 ```
 
+### Post C1 (`foundation` mode) immediately after committing
+
+After the foundation commit is pushed, render and post C1 in `foundation` mode. The renderer enforces:
+
+- Progression table columns `["Original", "Foundation"]` (no other shape).
+- Coverage cells filled from `coverage_summary.py` output for both stages.
+- Kill-rate cells set to `"N/A"` (mutations have not been run yet).
+- Each `foundation_tests[]` entry carries an English description and a JA mirror.
+- A non-empty `ja.summary` at the top level.
+
+Example (abbreviated):
+
+```bash
+cat > /tmp/c1-foundation.json <<'JSON'
+{
+  "mode": "foundation",
+  "feature_or_pr_title": "feat(mcp): include applied dashboard filters in get_chart_info",
+  "summary": "Existing tests covered only 29% of changed-file lines. Devin wrote 46 foundation tests bringing coverage to 100%/100% line/branch before any mutations are applied.",
+  "log_path": ".devin/mutation-testing/pr-27-2026-05-13-mcp-dashboard-filters.md",
+  "progression": {
+    "columns": ["Original", "Foundation"],
+    "rows": {
+      "tests":      ["72", "118"],
+      "line_pct":   ["29%", "100%"],
+      "branch_pct": ["10%", "100%"],
+      "kill_rate":  ["N/A", "N/A"],
+      "survived":   ["N/A", "N/A"]
+    }
+  },
+  "foundation_tests": [{
+    "file": "tests/.../test_chart_helpers.py", "added": 46,
+    "covers": "chart_helpers critical guarantees",
+    "ja": {"file": "tests/.../test_chart_helpers.py", "added": 46,
+           "covers": "chart_helpers の重要保証"}
+  }],
+  "notes": ["Foundation phase triggered by coverage of 29% on changed files."],
+  "ja": {
+    "summary": "テスト不足のため基盤テストを 46 件追加しました。",
+    "notes": ["カバレッジ 29% のため基盤フェーズを実行。"]
+  }
+}
+JSON
+.devin/mutation-testing/scripts/render_pr_comment.py /tmp/c1-foundation.json --out /tmp/c1.md
+# Post /tmp/c1.md via git_comment (or `gh pr comment -F /tmp/c1.md`).
+```
+
+If Foundation is skipped, **do not skip C1** — post a `status` mode comment instead. See Phase 1 below.
+
 ## Measure — Phase 0c: Verify test environment
 
 Before starting mutation testing, verify the test environment can run the targeted tests:
@@ -204,7 +283,8 @@ Before starting mutation testing, verify the test environment can run the target
 ./.devin/mutation-testing/scripts/setup_env.sh
 
 # Cache the templates and the agent handoff from origin/master (works
-# even when the PR branch under test doesn't have .devin/docs/).
+# even when the PR branch under test doesn't have
+# .devin/mutation-testing/templates/).
 ./.devin/mutation-testing/scripts/fetch_templates.sh
 
 # Confirm collection succeeds. run_targeted.sh wraps `pytest` with the
@@ -255,6 +335,27 @@ Likely risk areas:
 ```
 
 Do not continue until the critical guarantees are clear.
+
+### Post C1 (`status` mode) when Foundation is skipped
+
+If Phase 0b did NOT run (triage classified coverage as **Moderate** or **Good**), post the short kickoff comment here — before any mutation work — so reviewers can see that the run has started.
+
+```bash
+cat > /tmp/c1-status.json <<'JSON'
+{
+  "mode": "status",
+  "feature_or_pr_title": "<conventional commit title of the PR>",
+  "summary": "Reviewing the PR's targeted test suite and experimenting with mutation notation against the changed behaviour. Initial mutation results, then a final report, will follow as separate comments.",
+  "ja": {
+    "summary": "該当PRのターゲットテストスイートをレビューし、変更箇所に対するミューテーション記法を検証中です。初期ミューテーション結果と最終レポートを別コメントで続けて投稿します。"
+  }
+}
+JSON
+.devin/mutation-testing/scripts/render_pr_comment.py /tmp/c1-status.json --out /tmp/c1.md
+# Post /tmp/c1.md via git_comment.
+```
+
+If Phase 0b ran, C1 has already been posted in `foundation` mode — do not post a second C1 here.
 
 ## Measure — Phase 2: Identify the targeted test suite and run baseline
 
@@ -529,27 +630,50 @@ Definitions:
 Metrics:
 
 ```text
-kill rate = killed mutations / valid mutations
-survived rate = survived mutations / valid mutations
+initial kill rate = killed mutations / valid mutations
+final   kill rate = killed mutations / (valid mutations − dismissed)
+survived rate     = (survived mutations − dismissed) / valid mutations
 ```
 
-## Report checkpoint — Phase 7: Publish initial PR comment
+The **final** kill rate excludes `dismissed` mutations from the denominator because they are functionally equivalent — no test can distinguish them from the original code. Dismissals must be justified individually (see `FORBIDDEN ACTIONS` §5).
 
-After initial mutation testing, post or update a PR comment using the structure from `template_03_final_report.md`. At the checkpoint stage, fill in the initial state fields and leave final state fields as TBD.
+## Report checkpoint — Phase 7: Publish C2 (`initial` mode) PR comment
 
-The comment must include:
+Render and post C2 immediately after the initial mutation pass completes. The renderer mode is `initial`, and **every** surviving mutation **MUST** be classified now — either `pending` (Devin will write a test in Improve) or `dismissed` (functionally equivalent — explained).
 
-- initial coverage,
-- initial mutation kill rate,
-- surviving mutation gaps,
-- what Devin will fix next,
-- the target for acceptable coverage.
+### Classify each survivor
 
-Append a clear next-action line:
+For each surviving mutation, decide its classification at C2 time:
 
-> Devin will add targeted tests for the surviving mutation gaps and raise targeted coverage for the changed behavior, then rerun mutation testing and update this report with the final state.
+| Decision | Use when | Required field |
+|---|---|---|
+| `classification: "pending"` | A test can distinguish the mutant from the original — Devin will write it in Phase 8. | `planned_test` (one-sentence test description) |
+| `classification: "dismissed"` | The mutant is functionally equivalent to the original — no test can ever kill it. | `dismissal_reason` (why it is equivalent + how that was verified empirically) |
 
-**Important:** Use the same `template_03_final_report.md` structure for both the checkpoint and the final report. The checkpoint is an incomplete version of the final report — same template, partial data. Do not use a different format for the checkpoint.
+Anything you are not sure about is **`pending`**. Do not dismiss to avoid work — see `FORBIDDEN ACTIONS` §5.
+
+### Build the JSON payload
+
+The payload has three column shapes depending on whether Foundation ran:
+
+- Phase 0b ran: `progression.columns = ["Original", "Foundation", "Initial mutation"]`
+- Phase 0b skipped: `progression.columns = ["Original", "Initial mutation"]`
+
+Every row in `progression.rows` (`tests`, `line_pct`, `branch_pct`, `kill_rate`, `survived`) must have the same number of cells as the column count. Unmeasured cells are `"N/A"` — never duplicates of a measured cell.
+
+```bash
+.devin/mutation-testing/scripts/render_pr_comment.py /tmp/c2-initial.json --out /tmp/c2.md
+# Post /tmp/c2.md via git_comment.
+```
+
+The renderer rejects payloads that:
+
+- omit the top-level `ja` block, or `ja.summary`,
+- contain a survivor without `classification`, or with an invalid one,
+- contain a `pending` survivor without `planned_test`,
+- contain a `dismissed` survivor without `dismissal_reason`,
+- omit `ja` mirrors on individual survivor rows,
+- declare progression columns of the wrong shape for the foundation state.
 
 ## Improve — Phase 8: Fix meaningful test gaps and coverage holes
 
@@ -689,39 +813,49 @@ Required final state:
 - final mutation results captured,
 - final changes committed to the PR branch.
 
-## Report — Phase 12: Final PR comment update
+## Report — Phase 12: Publish C3 (`final` mode) PR comment
 
-Update the PR comment with the final before/after report. **You MUST use `template_03_final_report.md` exactly.** This is the only valid format for PR comments in this workflow. Do not create a custom format, simplified version, or alternative layout.
+Render and post C3 after Improve (Phase 8) and Verify (Phase 9, 11) complete. **Use `render_pr_comment.py` with `mode: "final"`** — hand-writing the ~20 KB of nested `<details>` + tables + JA mirror is forbidden (see `FORBIDDEN ACTIONS` §1).
 
-**Use `render_pr_comment.py` to produce the comment.** Hand-writing the ~20 KB of nested `<details>` + tables + JA mirror is how sections get dropped or accidentally use a stale format.
+### Final-comment invariant
 
-Assemble a single JSON file with the structured results (see the docstring of `render_pr_comment.py` for the full schema, but the shape is: `initial`, `final`, `surviving`, `caught`, `changes`, `gaps`, `summary`, `notes`, plus a parallel `ja` mirror). The numbers in `initial`/`final` come directly from the JSON outputs of `coverage_summary.py` and `mutation_runner.py`. Then:
+Every survivor from C2 **MUST** appear in `resolved[]` as one of:
+
+- `resolution: "killed"` with `added_test` (the test name) and `explanation` (one sentence on what the test asserts).
+- `resolution: "dismissed"` with `dismissal_reason` (why the mutation is functionally equivalent + how it was verified) and `explanation`.
+
+The renderer **rejects** payloads with `pending` entries in `final` mode — see `FORBIDDEN ACTIONS` §4. There is **no `❌ Remaining uncaught` section** in this template. The C3 comment must show zero remaining items.
+
+### Build the JSON payload
+
+The progression table shape depends on whether Foundation ran:
+
+- Phase 0b ran: `progression.columns = ["Original", "Foundation", "Initial mutation", "Final"]`
+- Phase 0b skipped: `progression.columns = ["Original", "Initial mutation", "Final"]`
+
+Final kill-rate cell is computed as `killed / (total − dismissed)` — when every initial survivor has been resolved this is always 100%. The "Survived" Final cell reads `"0 (<N> dismissed)"` because the bucket renaming makes "0 remaining" the correct count.
 
 ```bash
 ./.devin/mutation-testing/scripts/render_pr_comment.py \
-  /tmp/final-results.json \
-  --out /tmp/pr-comment.md
+  /tmp/c3-final.json \
+  --out /tmp/c3.md
+# Post /tmp/c3.md via git_comment.
 ```
 
-The renderer validates the payload shape (e.g. `final` must be present and complete when `mode: "final"`) so a malformed JSON can't silently produce a non-conformant comment.
+The renderer enforces every invariant programmatically. If it errors, fix the payload (or do the missing test work) and re-render — do not paste partial output to ship faster.
 
-The template requires every one of these sections — the renderer emits all of them:
+### Sections the renderer emits
 
-1. **Header** — mutation count, initial/final caught/survived, baseline/final result
-2. **Goal** — standard description of what Devin did
-3. **Remaining uncaught mutations** — ❌ accordion per surviving mutation with EN table + JA table, OR the standard "no surviving mutations" line
-4. **Fixed / verified caught mutations** — one parent accordion containing ✓ per individual mutation, each with EN explanation + JA translation
-5. **Summary** — brief English summary
-6. **Changes made** — table of Area / Change / Result
-7. **What's left for high-quality coverage** — table of Area / Add / Why + test quality comment
-8. **Coverage + mutation score** — initial vs final comparison table + comments + log path
-9. **JA accordion** — bottom accordion with full Japanese translation of summary, changes, what's left, test quality, coverage table, and comments
+1. **Header** — total / killed / dismissed / `0` remaining / final kill rate.
+2. **Resolved** — one `<details>` per initial-survivor, badged `✓ killed` or `≡ dismissed`, with the added test or dismissal reason.
+3. **Progression** — full table (3 or 4 columns) with `N/A` in unmeasured cells, plus the kill-rate-formula note.
+4. **Changes made** — collapsed table of Area / Change / Result.
+5. **What's left for high-quality coverage** — collapsed table of Area / Add / Why, plus test-quality note.
+6. **Mutations caught** — collapsed parent accordion containing every caught mutation (originally caught + newly killed).
+7. **Notes** — collapsed list of supporting facts + log path.
+8. **JA** — bottom collapsed accordion mirroring every section in Japanese.
 
-For the **Phase 7 checkpoint comment**, render with `mode: "checkpoint"` (final state mirrors initial in the output table) and keep the same `feature_or_pr_title`, `surviving`, `caught`, etc. — the renderer guarantees the same template is used for both checkpoint and final, so the only thing that changes between the two is the JSON payload, not the markdown structure.
-
-Fill in all template variables. If no mutations survived, leave `surviving: []` and the renderer emits the template's "no surviving mutations" note.
-
-See `template_03_final_report.example.md` for a correctly filled example based on a real run.
+See `template_03_final_report.example.md` for a fully-filled example based on a real run.
 
 ---
 
@@ -764,6 +898,22 @@ A common mistake is designing 10 mutations that all test the same category (e.g.
 ## Lesson 9: Coverage-informed mutation design outperforms random selection
 
 The most effective mutation sets are designed by first analyzing coverage data — uncovered lines, low branch percentages, implicit contracts — then crafting mutations that specifically target those weak spots. This approach finds more surviving mutations (real gaps) than selecting mutations based on code patterns alone.
+
+## Lesson 10: Hand-writing PR comments drops the JA mirror
+
+A past run rendered a checkpoint comment via `render_pr_comment.py`, then hand-wrote a shorter version and posted *that* — silently dropping the Japanese mirror that the renderer would have enforced. The fix: never compose markdown directly for `git_comment`/`gh pr comment` in this workflow. Always pipe a JSON payload through `render_pr_comment.py` (see `FORBIDDEN ACTIONS` §1). The renderer is the only place we can centrally enforce JA mirrors, classification, N/A handling, and the final-comment invariant.
+
+## Lesson 11: Equivalent mutations are not failures
+
+A mutation that produces functionally identical observable behaviour (e.g., Pydantic str-Enum coercion that serialises to byte-identical JSON, dead branches in unreachable arms) cannot be killed by any test. Past runs rendered these as `❌ Remaining uncaught`, which read as a quality failure even though no test could possibly distinguish the mutant from the original. They must be classified as `≡ dismissed` with an empirical `dismissal_reason`, and they must be excluded from the kill-rate denominator. See `FORBIDDEN ACTIONS` §5 for the bar a dismissal must meet.
+
+## Lesson 12: Foundation tests need their own PR comment
+
+When triage forces Phase 0b (Foundation), Devin writes most of the tests that will later be scored by the mutation pass. If the first PR comment is the initial mutation results, reviewers see "12/14 mutations killed" without realising 11 of those kills were enabled by tests Devin wrote that morning. The fix: post a dedicated **C1 (`foundation` mode) comment** immediately after the foundation commit, showing the Original → Foundation coverage jump and the test files Devin added. Then post the `initial` comment after the first mutation run.
+
+## Lesson 13: The final comment must never carry pending items
+
+The final PR comment is the artifact reviewers anchor on. If it shows even one `❌` survivor, the run reads as half-finished. Before posting C3, every survivor from C2 must be either killed by a new test (`resolution: killed`) or dismissed as functionally equivalent (`resolution: dismissed`). The renderer rejects `pending` in `final` mode — there is no escape hatch. Do the work, then post.
 
 ---
 

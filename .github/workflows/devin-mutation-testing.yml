@@ -22,12 +22,12 @@ jobs:
       pull-requests: read
 
     steps:
-      - name: Checkout docs from default branch
+      - name: Checkout mutation-testing templates from default branch
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.repository.default_branch || 'master' }}
           sparse-checkout: |
-            .devin/docs/
+            .devin/mutation-testing/templates/
 
       - name: Resolve PR number
         id: resolve
@@ -38,19 +38,20 @@ jobs:
             echo "pr_number=${{ github.event.inputs.pr_number }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Override PR-changed docs
+      - name: Override PR-changed templates
         run: |
           pr_number="${{ steps.resolve.outputs.pr_number }}"
           git fetch origin "pull/${pr_number}/head" --depth=1
-          changed=$(git diff --name-only HEAD FETCH_HEAD -- .devin/docs/)
+          changed=$(git diff --name-only HEAD FETCH_HEAD -- .devin/mutation-testing/templates/)
           if [ -n "$changed" ]; then
-            echo "PR #${pr_number} modifies these doc files — using PR versions:"
+            echo "PR #${pr_number} modifies these template files — using PR versions:"
             echo "$changed"
             echo "$changed" | while IFS= read -r f; do
+              mkdir -p "$(dirname "${f}")"
               git show "FETCH_HEAD:${f}" > "${f}"
             done
           else
-            echo "No .devin/docs/ changes in PR #${pr_number} — using default branch versions."
+            echo "No .devin/mutation-testing/templates/ changes in PR #${pr_number} — using default branch versions."
           fi
 
       - name: Prepare Devin prompt
@@ -80,7 +81,7 @@ jobs:
             }
 
             // Read the mutation testing instructions and all 3 templates
-            const docsDir = '.devin/docs';
+            const docsDir = '.devin/mutation-testing/templates';
             const instructionFiles = [
               'mutation_testing_agent_handoff.md',
               'template_01_test_foundation.md',

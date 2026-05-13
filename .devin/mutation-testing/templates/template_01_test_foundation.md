@@ -4,6 +4,8 @@ This template is used when the triage phase determines that the PR's changed beh
 
 The goal is to create a comprehensive test foundation before mutation testing begins, so that mutations have something meaningful to test against.
 
+This is an **internal planning document**, not a PR comment. The PR-facing Foundation announcement is rendered separately via `render_pr_comment.py --mode foundation` (see `template_03_final_report.md` for the comment shape). Both must be produced when Phase 0b runs.
+
 ---
 
 ## Test foundation plan — {{pr_title}}
