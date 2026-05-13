@@ -158,6 +158,24 @@ def test_match_adhoc_by_subject_uses_exact_equality_not_substring():
     assert _match_adhoc_by_subject(adhoc, "state") is None
 
 
+def test_match_adhoc_by_subject_rejects_substring_overlap():
+    """Equality must be both-direction: column substring of subject must NOT match.
+
+    Guards against a regression where exact `==` is relaxed to substring containment
+    (e.g. `column in subject`), which would cross-pollinate filter values between
+    columns that share a prefix/suffix (state ↔ metro_state).
+    """
+    adhoc_metro_subject = [
+        {"subject": "metro_state", "operator": "IN", "comparator": ["NYC"]}
+    ]
+    assert _match_adhoc_by_subject(adhoc_metro_subject, "state") is None
+
+    adhoc_state_subject = [
+        {"subject": "state", "operator": "IN", "comparator": ["CA"]}
+    ]
+    assert _match_adhoc_by_subject(adhoc_state_subject, "metro_state") is None
+
+
 def test_match_adhoc_by_subject_returns_first_match_when_duplicates():
     """First matching filter wins (in-order iteration)."""
     adhoc = [
@@ -444,6 +462,36 @@ def test_build_applied_dashboard_filters_skips_divider_filters():
                 "id": "DIVIDER-1",
                 "type": "DIVIDER",
                 "name": "Section break",
+            }
+        ],
+    )
+    with _patches_for_build(dashboard):
+        result = build_applied_dashboard_filters(dashboard_id=1, chart_id=1)
+    assert result == []
+
+
+def test_build_applied_dashboard_filters_skips_divider_even_when_in_scope():
+    """DIVIDER filters are excluded even when chartsInScope includes the chart.
+
+    Pins the `type == \"DIVIDER\"` early-continue independently of the scope check:
+    if the scope check alone were relied on, removing the DIVIDER guard would still
+    let layout-only entries leak into AppliedDashboardFilter output.
+    """
+    dashboard = _mock_dashboard(
+        slice_ids=[1],
+        native_filter_configuration=[
+            {
+                "id": "DIVIDER-1",
+                "type": "DIVIDER",
+                "name": "Section break",
+                "chartsInScope": [1],
+                "targets": [{"column": {"name": "state"}}],
+                "defaultDataMask": {
+                    "filterState": {"value": ["CA"]},
+                    "extraFormData": {
+                        "filters": [{"col": "state", "op": "IN", "val": ["CA"]}]
+                    },
+                },
             }
         ],
     )
