@@ -74,6 +74,20 @@ All structured outputs MUST follow the corresponding template files exactly. The
 
 Every section, table, accordion, and JA translation block defined in the template must appear in the output. If a section is not applicable (e.g., no remaining uncaught mutations), follow the template's specific guidance for that case — do not omit the section. Refer to the `.example.md` companion files for concrete examples of correctly filled templates.
 
+## Reusable tooling
+
+The mutation-testing lifecycle has a small set of scripts under `.devin/mutation-testing/scripts/`. Use them at the phases listed below — do not roll your own bash/heredoc/Python equivalents. See `.devin/mutation-testing/README.md` for the full reference.
+
+| Script | Use at | What it removes |
+|---|---|---|
+| `setup_env.sh` | Phase 0c | Manual apt installs, beartype circular-import patch, nh3 PyO3 upgrade. Idempotent. |
+| `fetch_templates.sh` | Phase 0c | Manually `git show origin/master:.devin/docs/...` for each template. |
+| `run_targeted.sh` | Phases 2, 9 (and as the pytest entry point for every other phase) | Forgetting to activate `.venv`, forgetting `PY_KEY_VALUE_DISABLE_BEARTYPE=true`, forgetting PR-specific deselections. |
+| `coverage_summary.py` | Phases 3, 9 | Manually reshaping `pytest --cov-report=json` output into the YAML shape `template_02_mutation_testing.md` expects. |
+| `mutation_runner.py` | Phases 6, 9 | Case-sensitive `failed` grep, silent no-op when a patch can't apply, working-tree pollution on a failed restore. |
+| `lint_log.py` | Phases 4, 10 | Drift between the log file and `template_02_mutation_testing.md` (missing keys, wrong section order, unset `rerun_type`). |
+| `render_pr_comment.py` | Phases 7 (checkpoint), 12 (final) | Hand-writing ~20 KB of nested `<details>` + tables + JA mirror in `template_03_final_report.md`. |
+
 ## User-visible Preamble
 
 Before running tools for a manual/interactive request, send one short update:
@@ -186,14 +200,25 @@ git commit -m "test: add foundation tests for <feature>"
 Before starting mutation testing, verify the test environment can run the targeted tests:
 
 ```bash
-python -m pytest --version
-pytest <targeted tests> --collect-only -q
+# Idempotent setup: apt deps, venv, beartype patch, nh3 upgrade.
+./.devin/mutation-testing/scripts/setup_env.sh
+
+# Cache the templates and the agent handoff from origin/master (works
+# even when the PR branch under test doesn't have .devin/docs/).
+./.devin/mutation-testing/scripts/fetch_templates.sh
+
+# Confirm collection succeeds. run_targeted.sh wraps `pytest` with the
+# venv active and PY_KEY_VALUE_DISABLE_BEARTYPE=true exported so every
+# subsequent run is byte-identical except for the patched source.
+./.devin/mutation-testing/scripts/run_targeted.sh <targeted tests> --collect-only -q
 ```
 
 If collection fails due to missing dependencies:
-- Install the missing packages.
+- Re-run `setup_env.sh` (it is idempotent); inspect its output for any apt or pip step that errored.
 - Document any environment fixes needed.
 - Do not proceed to baseline until collection succeeds.
+
+For every pytest invocation in the rest of this lifecycle, use `./.devin/mutation-testing/scripts/run_targeted.sh` instead of `pytest` directly. It guarantees the venv is active, the beartype patch is honored, and PR-specific pre-existing failures (`DEVIN_PYTEST_DESELECT`) are deselected consistently.
 
 ## Measure — Phase 1: Understand the PR
 
@@ -243,10 +268,10 @@ Include:
 - lower-level unit tests for helpers/parsers,
 - service/API/tool tests for externally visible behavior.
 
-Run baseline:
+Run baseline (use the canonical wrapper, not bare `pytest`):
 
 ```bash
-pytest <targeted tests> -q
+./.devin/mutation-testing/scripts/run_targeted.sh <targeted tests> -q
 ```
 
 ### Handling baseline failures
@@ -268,23 +293,19 @@ If baseline fails:
 
 ## Measure — Phase 3: Measure initial targeted coverage
 
-Run standard coverage for relevant changed feature files/modules:
+Run targeted coverage via the helper, which emits the JSON shape that `template_02_mutation_testing.md`'s YAML front matter expects:
 
 ```bash
-pytest <targeted tests> \
-  --cov=<module_or_package_1> \
-  --cov=<module_or_package_2> \
-  --cov-report=term-missing \
-  --cov-report=json:<coverage-output>.json \
-  --cov-branch \
-  -q
+./.devin/mutation-testing/scripts/coverage_summary.py \
+  --tests <test_path_1> --tests <test_path_2> \
+  --cov <module_or_package_1> --cov <module_or_package_2> \
+  --output /tmp/initial-coverage.json \
+  -- --cov-report=term-missing
 ```
 
-Record the initial state:
+The `--` separator passes everything after it straight through to `pytest`. Keep `--cov-report=term-missing` so the term-missing output is still printed and you can use it in the Improve phase.
 
-- targeted suite pass count,
-- line coverage percent and covered/total lines,
-- branch coverage percent and covered/total branches.
+The JSON output already contains: targeted suite pass/fail counts, line/branch percent + covered/total, plus a `per_file` array with missing line numbers. Drop the JSON directly into `initial_state` of the log file.
 
 Use these numbers as context. Mutation score is the stronger behavior signal, but coverage must still be high enough for the PR's changed behavior.
 
@@ -320,6 +341,14 @@ This file must be committed with the PR branch.
 The log is the long-term index of Devin's test-quality work. It MUST include YAML front matter and both initial and final state. Follow the schema and body structure defined in `template_02_mutation_testing.md` **exactly** — this is the only valid format for mutation testing logs. See `template_02_mutation_testing.example.md` for a correctly filled example.
 
 Use `status: "in_progress"` while the run is still being improved/verified. Change it to `status: "completed"` only after final verification and commit.
+
+Validate the log file before continuing to mutations:
+
+```bash
+./.devin/mutation-testing/scripts/lint_log.py .devin/mutation-testing/pr-<N>-<DATE>-<slug>.md
+```
+
+`lint_log.py` checks the YAML front matter shape, all required H2 section headings, and that `final_state.mutation_testing.rerun_type` is set when `status: completed`. Exit code 0 means the log conforms to `template_02_mutation_testing.md`. Run it again after Phase 10 (final log update).
 
 ## Measure — Phase 5: Select realistic mutations
 
@@ -378,37 +407,45 @@ For manual/interactive runs, present the mutation plan before executing:
 
 ## Measure — Phase 6: Execute initial mutations
 
-**Default: apply one mutation at a time.** This is the safe approach and is correct for most PRs.
+**Use `mutation_runner.py`**, driven by a YAML spec. The runner applies one mutation at a time, asserts the working tree is clean before and after each one, refuses to silently no-op (the `old` block must appear exactly once), parses pytest's pass/fail counts with a regex (no case-sensitive `failed` grep), and restores the file with `git checkout --` whether the test run succeeded or crashed.
 
-For large PRs with 20+ mutations where runtime is a concern, you may batch non-conflicting mutations (mutations that touch different files and different behaviors). If a batch fails, split it into smaller groups until each failure is attributable to a specific mutation. Mutations that touch the same file, same pattern, or same behavior must always be in separate runs.
+Write a YAML spec at e.g. `.devin/mutation-testing/pr-<N>-mutations.yaml`:
 
-### Execution workflow
-
-1. Start from the PR head with a clean working tree.
-2. Apply one mutation as an unstaged file change.
-3. Run the full targeted suite (do NOT use `-x` or `--exitfirst`).
-4. Record the result: killed, survived, or invalid.
-5. Restore files to PR head: `git checkout -- <mutated file>`.
-6. Confirm `git status --short` shows a clean tree.
-7. Continue with the next mutation.
-
-**Important:** Do not use `pytest -x` or `--exitfirst` when running mutation tests. The full targeted suite must run for each mutation so that all failures are attributable to the mutation. Using `-x` can cause pre-existing or unrelated failures to mask surviving mutations — this was a critical bug found in real-world testing.
-
-Example:
-
-```bash
-git status --short
-# edit file to apply one mutation as an unstaged change
-pytest <targeted tests> -q
-git checkout -- <mutated file>
-git status --short
+```yaml
+test_paths:
+  - tests/unit_tests/sql/parse_tests.py
+  - tests/unit_tests/mcp_service/sql_lab/tool/test_execute_sql.py
+mutations:
+  - id: M1
+    description: Remove exp.Drop from mutating_nodes
+    file: superset/sql/parse.py
+    indent: 12         # YAML's `|` strips leading whitespace; this puts it back
+    old: |
+      exp.Drop,
+      exp.TruncateTable,
+    new: |
+      exp.TruncateTable,
 ```
 
-If you do not need to preserve the mutation diff, you may restore the files directly to PR head:
+Run it:
 
 ```bash
-git restore --source=HEAD -- <mutated files>
+./.devin/mutation-testing/scripts/mutation_runner.py \
+  .devin/mutation-testing/pr-<N>-mutations.yaml \
+  --results /tmp/initial-mutations.json
 ```
+
+The runner emits a JSON file with `killed`, `survived`, `errored`, `kill_rate`, and a per-mutation `results[]` array. Drop these directly into `initial_state.mutation_testing` of the log file. Each result also carries the `first_failing_test`, which goes in the "Caught by" column of the log's mutation results table.
+
+Use `--only M1,M2` to focus on specific mutations (e.g., re-running only survivors in Phase 9). Use `--continue-on-error` only if you want a single broken spec entry to not stop the rest of the run.
+
+**Hard rules the runner enforces for you:**
+
+- If the `old` block appears zero or more than one times in `file`, the mutation is recorded as `error` (never `survived`). Silent no-ops are impossible.
+- If the working tree is dirty for any target file at the start of a mutation, the runner aborts. If a restore fails after a mutation, it aborts. A contaminated baseline cannot leak into later mutations.
+- Pass/fail counts come from `\d+\s+passed` / `\d+\s+failed` / `\d+\s+error` regex on pytest's summary line, so `FAILED` (uppercase) and `failed` (lowercase) are both detected. A mutation with `failed > 0` is `killed`; with `passed > 0, failed == 0` it is `survived`; with neither it is `error`.
+
+**Do not roll your own bash/heredoc/Python mutation loop.** The earlier in-flight version of this workflow had two near-misses: every mutation labelled SURVIVED because a case-sensitive grep missed `FAILED`, and one mutation silently no-opped because the patch's Python literal was syntactically invalid. The runner exists to make both classes impossible.
 
 Temporary mutation stashes are not final artifacts. Keep only the recorded results in the repo log.
 
@@ -523,11 +560,28 @@ Acceptable coverage means:
 Rerun only targeted tests and targeted coverage:
 
 ```bash
-pytest <targeted tests> -q
-pytest <targeted tests> --cov=<relevant modules> --cov-report=term-missing --cov-report=json:<coverage-output>.json --cov-branch -q
+./.devin/mutation-testing/scripts/run_targeted.sh <targeted tests> -q
+./.devin/mutation-testing/scripts/coverage_summary.py \
+  --tests <test_path_1> --tests <test_path_2> \
+  --cov <module_1> --cov <module_2> \
+  --output /tmp/final-coverage.json \
+  -- --cov-report=term-missing
 ```
 
-Rerun the mutation set, or at minimum rerun all previously surviving mutations plus high-risk strength mutations.
+Rerun the mutation set, or at minimum rerun all previously surviving mutations plus high-risk strength mutations:
+
+```bash
+# Survivor-focused rerun: only the IDs that survived initially.
+./.devin/mutation-testing/scripts/mutation_runner.py \
+  .devin/mutation-testing/pr-<N>-mutations.yaml \
+  --only M11,M12,M13,M16 \
+  --results /tmp/final-mutations.json
+
+# Or full rerun (preferred if runtime is reasonable).
+./.devin/mutation-testing/scripts/mutation_runner.py \
+  .devin/mutation-testing/pr-<N>-mutations.yaml \
+  --results /tmp/final-mutations.json
+```
 
 If runtime is reasonable, rerun the full original mutation set for a clean final kill rate. If runtime is high, rerun:
 
@@ -593,7 +647,19 @@ Required final state:
 
 Update the PR comment with the final before/after report. **You MUST use `template_03_final_report.md` exactly.** This is the only valid format for PR comments in this workflow. Do not create a custom format, simplified version, or alternative layout.
 
-The template requires every one of these sections:
+**Use `render_pr_comment.py` to produce the comment.** Hand-writing the ~20 KB of nested `<details>` + tables + JA mirror is how sections get dropped or accidentally use a stale format.
+
+Assemble a single JSON file with the structured results (see the docstring of `render_pr_comment.py` for the full schema, but the shape is: `initial`, `final`, `surviving`, `caught`, `changes`, `gaps`, `summary`, `notes`, plus a parallel `ja` mirror). The numbers in `initial`/`final` come directly from the JSON outputs of `coverage_summary.py` and `mutation_runner.py`. Then:
+
+```bash
+./.devin/mutation-testing/scripts/render_pr_comment.py \
+  /tmp/final-results.json \
+  --out /tmp/pr-comment.md
+```
+
+The renderer validates the payload shape (e.g. `final` must be present and complete when `mode: "final"`) so a malformed JSON can't silently produce a non-conformant comment.
+
+The template requires every one of these sections — the renderer emits all of them:
 
 1. **Header** — mutation count, initial/final caught/survived, baseline/final result
 2. **Goal** — standard description of what Devin did
@@ -605,7 +671,9 @@ The template requires every one of these sections:
 8. **Coverage + mutation score** — initial vs final comparison table + comments + log path
 9. **JA accordion** — bottom accordion with full Japanese translation of summary, changes, what's left, test quality, coverage table, and comments
 
-Fill in all template variables. If no mutations survived, follow the template's note: "No surviving mutations remained after targeted fixes."
+For the **Phase 7 checkpoint comment**, render with `mode: "checkpoint"` (final state mirrors initial in the output table) and keep the same `feature_or_pr_title`, `surviving`, `caught`, etc. — the renderer guarantees the same template is used for both checkpoint and final, so the only thing that changes between the two is the JSON payload, not the markdown structure.
+
+Fill in all template variables. If no mutations survived, leave `surviving: []` and the renderer emits the template's "no surviving mutations" note.
 
 See `template_03_final_report.example.md` for a correctly filled example based on a real run.
 
