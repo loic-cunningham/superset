@@ -1,0 +1,161 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+targets:
+  - path: .devin/mutation-testing/scripts/render_pr_comment.py
+
+test_paths:
+  - tests/unit_tests/scripts/render_pr_comment_test.py
+
+mutations:
+  - id: M1
+    description: "_validate_progression: weaken column tuple-equality to length-only"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      if expected_columns is not None and tuple(cols) != expected_columns:
+    new: |
+      if expected_columns is not None and len(cols) != len(expected_columns):
+
+  - id: M2
+    description: "Hero: add 'pending' to RESOLUTION_TYPES (final mode now accepts pending)"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      RESOLUTION_TYPES = {"killed", "dismissed"}
+    new: |
+      RESOLUTION_TYPES = {"killed", "dismissed", "pending"}
+
+  - id: M3
+    description: "_render_final: weaken redundant pending-survivor guard to always-false"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      if any(e.get("resolution") not in RESOLUTION_TYPES for e in resolved):
+    new: |
+      if False and any(e.get("resolution") not in RESOLUTION_TYPES for e in resolved):
+
+  - id: M4
+    description: "_require_ja: drop empty-dict rejection (now accepts ja={})"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      if not isinstance(ja, dict) or not ja:
+    new: |
+      if not isinstance(ja, dict):
+
+  - id: M5
+    description: "_validate_survivor: skip ja.dismissal_reason check for dismissed survivor"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 4
+    old: |
+      if classification == "dismissed" and not ja.get("dismissal_reason"):
+          raise RenderError(
+              f"{mode} survivor {entry.get('id')!r} dismissed entry "
+              "`ja.dismissal_reason` is required"
+          )
+    new: |
+      pass
+
+  - id: M6
+    description: "_kill_rate: relax denom boundary from <= 0 to < 0 (zero crashes)"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      if denom <= 0:
+    new: |
+      if denom < 0:
+
+  - id: M7
+    description: "_render_final: use initial_idx instead of final_idx for header kill rate"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      final_kill_rate_cell = rows["kill_rate"][final_idx]
+    new: |
+      final_kill_rate_cell = rows["kill_rate"][initial_idx]
+
+  - id: M8
+    description: "main: swallow RenderError and return 0 instead of 2"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 4
+    old: |
+      except RenderError as exc:
+          print(f"render_pr_comment: {exc}", file=sys.stderr)
+          return 2
+    new: |
+      except RenderError as exc:
+          print(f"render_pr_comment: {exc}", file=sys.stderr)
+          return 0
+
+  - id: M9
+    description: "render: silent fallback to status renderer for unknown modes"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 4
+    old: |
+      mode = payload.get("mode")
+      if mode not in VALID_MODES:
+          raise RenderError(
+              f"`mode` must be one of {sorted(VALID_MODES)}, got {mode!r}"
+          )
+      return _RENDERERS[mode](payload)
+    new: |
+      mode = payload.get("mode")
+      if mode not in VALID_MODES:
+          return _render_status(payload)
+      return _RENDERERS[mode](payload)
+
+  - id: M10
+    description: "_validate_progression: weaken row-length check to >= 1 cells"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      if not isinstance(row, list) or len(row) != len(cols):
+    new: |
+      if not isinstance(row, list) or len(row) < 1:
+
+  - id: M11
+    description: "_render_caught_brief_block: force caught_by to empty string"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 0
+    old: |
+      caught_by = data.get("caught_by", "")
+    new: |
+      caught_by = ""
+
+  - id: M12
+    description: "_render_resolved_block: swap killed/dismissed badge mapping (output contract)"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    indent: 8
+    old: |
+      if entry["resolution"] == "killed":
+          badge = "✓"
+          tail = (
+              ("検出テスト" if japanese else "Caught by")
+              + f": `{data['added_test']}`."
+          )
+      else:
+          badge = "≡"
+    new: |
+      if entry["resolution"] == "killed":
+          badge = "≡"
+          tail = (
+              ("検出テスト" if japanese else "Caught by")
+              + f": `{data['added_test']}`."
+          )
+      else:
+          badge = "✓"

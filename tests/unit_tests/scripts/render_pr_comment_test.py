@@ -730,6 +730,32 @@ def test_final_rejects_pending_resolution_inside_resolved_list():
         render(payload)
 
 
+def test_final_post_validation_guard_catches_pending_even_without_validate_resolved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The defense-in-depth guard inside `_render_final` must still reject
+    `pending` resolutions even if `_validate_resolved` is bypassed.
+
+    This protects against future refactors that move or remove the
+    per-entry validation loop. Without this test the redundant guard
+    is dead code (covered upstream) and indistinguishable from
+    ``if False and ...``.
+    """
+    monkeypatch.setattr(renderer, "_validate_resolved", lambda _entry: None)
+    payload = _final_payload()
+    payload["resolved"] = [
+        {
+            "id": "M2",
+            "name": "x",
+            "resolution": "pending",
+            "explanation": "x",
+            "ja": {"name": "x", "explanation": "x"},
+        }
+    ]
+    with pytest.raises(RenderError, match="final mode rejects `pending`"):
+        render(payload)
+
+
 def test_final_killed_resolution_requires_added_test():
     payload = _final_payload()
     entry = _resolved()
