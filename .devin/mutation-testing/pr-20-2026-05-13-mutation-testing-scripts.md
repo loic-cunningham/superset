@@ -73,7 +73,7 @@ final_state:
     rerun_type: "full"
 
 commits:
-  - "a3a6238fa2662befeb89b47d070a8afc74a41b50"
+  - "59284bc904e34cdc366ff9f0eb6df9a2b80a55a3"
 
 artifacts:
   pr_comment_url: ""
