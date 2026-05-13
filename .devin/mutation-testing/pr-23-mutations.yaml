@@ -1,0 +1,160 @@
+# Mutation testing spec for PR #23 — RLS double-apply fix.
+#
+# 10 mutations total: 7 gap (likely to survive) / 3 strength (likely killed).
+# Targets the four critical guarantees added by this PR:
+#   1. The new `id != exclude_dataset_id` self-match filter is added with the
+#      correct *operator* (not just the correct *clause count*).
+#   2. The new filter is gated on `exclude_dataset_id is not None` (no truthy
+#      shortcut — id=0 must still be excluded).
+#   3. apply_rls / collect_rls_predicates_for_sql actually propagate the new
+#      kwarg into get_predicates_for_table.
+#   4. SqlaTable.get_extra_cache_keys and ExploreMixin.apply_rls wire `self.id`
+#      (or getattr fallback) into the new kwarg.
+test_paths:
+  - tests/unit_tests/sql_lab_test.py
+  - tests/unit_tests/security/guest_rls_test.py
+  - tests/unit_tests/models/test_virtual_dataset_format.py
+mutations:
+  # ----------------- GAP MUTATIONS (likely to survive) -----------------
+
+  - id: M1
+    description: "rls.py: invert self-match operator (!= -> ==) — the demo hero mutation"
+    file: superset/utils/rls.py
+    old: |
+      if exclude_dataset_id is not None:
+          filters.append(SqlaTable.id != exclude_dataset_id)
+    new: |
+      if exclude_dataset_id is not None:
+          filters.append(SqlaTable.id == exclude_dataset_id)
+    indent: 4
+
+  - id: M2
+    description: "rls.py apply_rls: hardcode exclude_dataset_id=None at the get_predicates_for_table call"
+    file: superset/utils/rls.py
+    old: |
+      for predicate in get_predicates_for_table(
+          table,
+          database,
+          database.get_default_catalog(),
+          exclude_dataset_id=exclude_dataset_id,
+      )
+    new: |
+      for predicate in get_predicates_for_table(
+          table,
+          database,
+          database.get_default_catalog(),
+          exclude_dataset_id=None,
+      )
+    indent: 12
+
+  - id: M3
+    description: "rls.py collect_rls_predicates_for_sql: hardcode exclude_dataset_id=None at the get_predicates_for_table call"
+    file: superset/utils/rls.py
+    old: |
+      for predicate in get_predicates_for_table(
+          table,
+          database,
+          default_catalog,
+          exclude_dataset_id=exclude_dataset_id,
+      )
+    new: |
+      for predicate in get_predicates_for_table(
+          table,
+          database,
+          default_catalog,
+          exclude_dataset_id=None,
+      )
+    indent: 16
+
+  - id: M4
+    description: "helpers.py ExploreMixin.apply_rls: hardcode self_id=None instead of getattr(self, 'id', None)"
+    file: superset/models/helpers.py
+    old: |
+      self_id = getattr(self, "id", None)
+    new: |
+      self_id = None
+    indent: 16
+
+  - id: M5
+    description: "models.py SqlaTable.get_extra_cache_keys: hardcode exclude_dataset_id=None instead of self.id"
+    file: superset/connectors/sqla/models.py
+    old: |
+      exclude_dataset_id=self.id,
+    new: |
+      exclude_dataset_id=None,
+    indent: 16
+
+  - id: M6
+    description: "rls.py: boundary — change `is not None` guard to truthy check (dataset id=0 bypasses exclusion)"
+    file: superset/utils/rls.py
+    old: |
+      if exclude_dataset_id is not None:
+          filters.append(SqlaTable.id != exclude_dataset_id)
+    new: |
+      if exclude_dataset_id:
+          filters.append(SqlaTable.id != exclude_dataset_id)
+    indent: 4
+
+  - id: M7
+    description: "rls.py: wrong operator — use `<` instead of `!=` for self-exclusion (clause count unchanged, semantics wrong)"
+    file: superset/utils/rls.py
+    old: |
+      if exclude_dataset_id is not None:
+          filters.append(SqlaTable.id != exclude_dataset_id)
+    new: |
+      if exclude_dataset_id is not None:
+          filters.append(SqlaTable.id < exclude_dataset_id)
+    indent: 4
+
+  # ----------------- STRENGTH MUTATIONS (likely killed) -----------------
+
+  - id: M8
+    description: "rls.py: removed guard — drop the self-exclusion filter append entirely"
+    file: superset/utils/rls.py
+    old: |
+      if exclude_dataset_id is not None:
+          filters.append(SqlaTable.id != exclude_dataset_id)
+
+      dataset = db.session.query(SqlaTable).filter(and_(*filters)).one_or_none()
+    new: |
+      dataset = db.session.query(SqlaTable).filter(and_(*filters)).one_or_none()
+    indent: 4
+
+  - id: M9
+    description: "rls.py apply_rls: drop the exclude_dataset_id kwarg in the get_predicates_for_table call"
+    file: superset/utils/rls.py
+    old: |
+      for predicate in get_predicates_for_table(
+          table,
+          database,
+          database.get_default_catalog(),
+          exclude_dataset_id=exclude_dataset_id,
+      )
+    new: |
+      for predicate in get_predicates_for_table(
+          table,
+          database,
+          database.get_default_catalog(),
+      )
+    indent: 12
+
+  - id: M10
+    description: "rls.py apply_rls: change default exclude_dataset_id=None -> 0 (test_apply_rls asserts None kwarg)"
+    file: superset/utils/rls.py
+    old: |
+      def apply_rls(
+          database: Database,
+          catalog: str | None,
+          schema: str,
+          parsed_statement: BaseSQLStatement[Any],
+          exclude_dataset_id: int | None = None,
+      ) -> bool:
+    new: |
+      def apply_rls(
+          database: Database,
+          catalog: str | None,
+          schema: str,
+          parsed_statement: BaseSQLStatement[Any],
+          exclude_dataset_id: int | None = 0,
+      ) -> bool:
+    indent: 0

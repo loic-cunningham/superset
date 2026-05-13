@@ -36,7 +36,11 @@ from superset.sql_lab import (
     execute_sql_statements,
     get_sql_results,
 )
-from superset.utils.rls import apply_rls, get_predicates_for_table
+from superset.utils.rls import (
+    apply_rls,
+    collect_rls_predicates_for_sql,
+    get_predicates_for_table,
+)
 from tests.conftest import with_config
 from tests.unit_tests.models.core_test import oauth2_client_info
 
@@ -348,7 +352,17 @@ def test_get_predicates_for_table_excludes_self(mocker: MockerFixture) -> None:
     ``table_name`` matches a table referenced inside its own SQL doesn't get
     its own RLS injected into the inner SQL (would double-apply on top of the
     outer WHERE). Regression test for the physical→virtual conversion bug.
+
+    The assertions pin both the *arity* of the ``and_()`` clause list (4 base
+    filters + 1 exclusion filter = 5) and the *content* of the new exclusion
+    clause (operator must be ``!=``, operand must be the id we passed in).
+    Inverting the operator to ``==`` or weakening it to ``<`` would be a
+    multi-tenant RLS regression that a count-only assertion cannot catch.
     """
+    from sqlalchemy.sql import operators
+
+    from superset.connectors.sqla.models import SqlaTable
+
     database = mocker.MagicMock()
     db = mocker.patch("superset.utils.rls.db")
     db.session.query().filter().one_or_none.return_value = None
@@ -363,3 +377,174 @@ def test_get_predicates_for_table_excludes_self(mocker: MockerFixture) -> None:
     filter_call = db.session.query().filter.call_args
     and_clause = filter_call.args[0]
     assert len(and_clause.clauses) == 5
+
+    # Pin the new exclusion clause: column is SqlaTable.id, operator is `!=`,
+    # and the right-hand operand is the exclude_dataset_id we passed in.
+    exclusion_clause = and_clause.clauses[-1]
+    assert exclusion_clause.left.key == "id"
+    assert exclusion_clause.left.table.name == SqlaTable.__tablename__
+    assert exclusion_clause.operator is operators.ne
+    assert exclusion_clause.right.value == 42
+
+
+def test_get_predicates_for_table_excludes_self_treats_zero_as_real_id(
+    mocker: MockerFixture,
+) -> None:
+    """
+    ``exclude_dataset_id=0`` is a valid dataset id and must still trigger the
+    self-exclusion filter. The guard is ``is not None``, not a truthy check,
+    so id=0 would silently bypass exclusion if the implementation regressed to
+    ``if exclude_dataset_id:``.
+    """
+    database = mocker.MagicMock()
+    db = mocker.patch("superset.utils.rls.db")
+    db.session.query().filter().one_or_none.return_value = None
+
+    table = Table("orders", "public", "examples")
+    get_predicates_for_table(table, database, "examples", exclude_dataset_id=0)
+
+    filter_call = db.session.query().filter.call_args
+    and_clause = filter_call.args[0]
+    assert len(and_clause.clauses) == 5
+    assert and_clause.clauses[-1].right.value == 0
+
+
+def test_apply_rls_propagates_exclude_dataset_id(mocker: MockerFixture) -> None:
+    """
+    ``apply_rls`` must forward a non-None ``exclude_dataset_id`` to each
+    ``get_predicates_for_table`` invocation. Without this, a virtual dataset
+    whose table_name collides with a referenced table inside its own SQL
+    would re-inject its own RLS predicates.
+    """
+    database = mocker.MagicMock()
+    database.get_default_schema_for_query.return_value = "public"
+    database.get_default_catalog.return_value = "examples"
+    database.db_engine_spec = PostgresEngineSpec
+    get_predicates_for_table_mock = mocker.patch(
+        "superset.utils.rls.get_predicates_for_table",
+        return_value=[],
+    )
+
+    parsed_statement = SQLStatement("SELECT * FROM t1", "postgresql")
+
+    apply_rls(
+        database,
+        "examples",
+        "public",
+        parsed_statement,
+        exclude_dataset_id=42,
+    )
+
+    get_predicates_for_table_mock.assert_called_once_with(
+        Table("t1", "public", "examples"),
+        database,
+        "examples",
+        exclude_dataset_id=42,
+    )
+
+
+def test_collect_rls_predicates_for_sql_propagates_exclude_dataset_id(
+    mocker: MockerFixture,
+) -> None:
+    """
+    ``collect_rls_predicates_for_sql`` (the cache-key path) must forward
+    ``exclude_dataset_id`` to ``get_predicates_for_table`` so the cache key
+    stays consistent with what is actually applied at query time. Without
+    this, a virtual dataset's cache key would include its own RLS predicates
+    that were never actually applied to the inner SQL.
+    """
+    database = mocker.MagicMock()
+    database.db_engine_spec.engine = "postgresql"
+    database.get_default_catalog.return_value = "examples"
+    get_predicates_for_table_mock = mocker.patch(
+        "superset.utils.rls.get_predicates_for_table",
+        return_value=["c1 = 1"],
+    )
+
+    result = collect_rls_predicates_for_sql(
+        "SELECT * FROM t1",
+        database,
+        "examples",
+        "public",
+        exclude_dataset_id=42,
+    )
+
+    assert result == ["c1 = 1"]
+    get_predicates_for_table_mock.assert_called_once()
+    assert (
+        get_predicates_for_table_mock.call_args.kwargs["exclude_dataset_id"] == 42
+    )
+
+
+def test_collect_rls_predicates_for_sql_returns_empty_on_parse_failure(
+    mocker: MockerFixture,
+) -> None:
+    """
+    Malformed SQL must short-circuit to an empty list so caching does not
+    break when the underlying virtual-dataset SQL fails to parse. This pins
+    the ``except Exception`` fallback in the cache-key path.
+    """
+    database = mocker.MagicMock()
+    database.db_engine_spec.engine = "postgresql"
+    database.get_default_catalog.return_value = "examples"
+    # SQLScript is lazily imported inside collect_rls_predicates_for_sql, so
+    # patch it at the source module rather than via the rls namespace.
+    mocker.patch(
+        "superset.sql.parse.SQLScript",
+        side_effect=Exception("parse error"),
+    )
+
+    assert (
+        collect_rls_predicates_for_sql(
+            "THIS IS NOT VALID SQL ;;;",
+            database,
+            "examples",
+            "public",
+        )
+        == []
+    )
+
+
+def test_get_extra_cache_keys_propagates_self_id(
+    mocker: MockerFixture,
+) -> None:
+    """
+    ``SqlaTable.get_extra_cache_keys`` must pass ``self.id`` as
+    ``exclude_dataset_id`` to ``collect_rls_predicates_for_sql``. This keeps
+    the cache key in lockstep with the apply-time path so virtual datasets
+    whose ``table_name`` collides with a referenced table do not see their
+    own RLS injected into the cached predicates.
+    """
+    from superset.connectors.sqla.models import SqlaTable
+
+    collect_mock = mocker.patch(
+        "superset.utils.rls.collect_rls_predicates_for_sql",
+        return_value=["pred1"],
+    )
+
+    # Mock the SqlaTable instance attributes used inside get_extra_cache_keys.
+    table = mocker.MagicMock(spec=SqlaTable)
+    table.id = 999
+    table.is_virtual = True
+    table.sql = "SELECT * FROM orders"
+    table.catalog = "examples"
+    table.schema = "public"
+    table.database.get_default_schema.return_value = "public"
+    table.has_extra_cache_key_calls.return_value = False
+
+    # Mock the parent class's get_extra_cache_keys (called via super()) so we
+    # don't need a full SQLAlchemy session to construct a real instance.
+    from superset.connectors.sqla.models import BaseDatasource
+
+    parent_mock = mocker.patch.object(
+        BaseDatasource,
+        "get_extra_cache_keys",
+        return_value=[],
+    )
+
+    result = SqlaTable.get_extra_cache_keys(table, {})
+
+    parent_mock.assert_called_once()
+    collect_mock.assert_called_once()
+    assert collect_mock.call_args.kwargs["exclude_dataset_id"] == 999
+    assert "pred1" in result

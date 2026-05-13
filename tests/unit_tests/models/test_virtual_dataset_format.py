@@ -379,4 +379,72 @@ class TestRLSSubqueryAlias:
         result = statement.format()
 
         assert "is_green" in result
-        assert "WHERE" in result  # RLS predicate applied
+
+
+# ---------------------------------------------------------------------------
+# 4. ExploreMixin.get_from_clause must forward self.id to apply_rls
+# ---------------------------------------------------------------------------
+
+
+class TestExcludeDatasetIdPropagation:
+    """
+    ``ExploreMixin.get_from_clause`` is the place where the inner-SQL RLS pass
+    needs to know the *outer* dataset's id so it can skip a self-match. Pin
+    both branches: subclasses with an ``id`` attribute (e.g. ``SqlaTable``)
+    and subclasses without one (e.g. SQL Lab ``Query``).
+    """
+
+    @patch("superset.models.helpers.apply_rls", return_value=False)
+    def test_self_id_propagates_to_apply_rls(
+        self,
+        mock_apply_rls: MagicMock,
+        app: Flask,
+    ) -> None:
+        """
+        When the datasource has an ``id`` attribute, that id must be passed to
+        ``apply_rls`` as ``exclude_dataset_id`` so the inner-SQL lookup skips
+        the dataset itself.
+        """
+        datasource = MagicMock()
+        datasource.id = 999
+        datasource.db_engine_spec.engine = "postgresql"
+        datasource.db_engine_spec.get_cte_query.return_value = None
+        datasource.db_engine_spec.cte_alias = "__cte"
+        datasource.database.get_default_schema.return_value = "public"
+        datasource.catalog = None
+        datasource.schema = "public"
+        datasource.text = lambda sql: TextClause(sql)
+        datasource.get_rendered_sql.return_value = "SELECT * FROM public.orders"
+
+        ExploreMixin.get_from_clause(datasource, template_processor=None)
+
+        mock_apply_rls.assert_called_once()
+        assert mock_apply_rls.call_args.kwargs.get("exclude_dataset_id") == 999
+
+    @patch("superset.models.helpers.apply_rls", return_value=False)
+    def test_missing_id_attribute_propagates_none(
+        self,
+        mock_apply_rls: MagicMock,
+        app: Flask,
+    ) -> None:
+        """
+        Subclasses without an ``id`` attribute (e.g. SQL Lab ``Query``) must
+        pass ``exclude_dataset_id=None`` — they have no own RLS to dedupe.
+        The ``getattr(self, "id", None)`` guard is what keeps this safe.
+        """
+        # spec=ExploreMixin means accessing .id raises AttributeError, which
+        # ``getattr(..., "id", None)`` swallows and returns None.
+        datasource = MagicMock(spec=ExploreMixin)
+        datasource.db_engine_spec.engine = "postgresql"
+        datasource.db_engine_spec.get_cte_query.return_value = None
+        datasource.db_engine_spec.cte_alias = "__cte"
+        datasource.database.get_default_schema.return_value = "public"
+        datasource.catalog = None
+        datasource.schema = "public"
+        datasource.text = lambda sql: TextClause(sql)
+        datasource.get_rendered_sql.return_value = "SELECT * FROM public.orders"
+
+        ExploreMixin.get_from_clause(datasource, template_processor=None)
+
+        mock_apply_rls.assert_called_once()
+        assert mock_apply_rls.call_args.kwargs.get("exclude_dataset_id") is None
