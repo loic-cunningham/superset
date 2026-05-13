@@ -37,7 +37,7 @@ Learn how to create and submit high-quality pull requests to Apache Superset.
 ### PR Readiness Checklist
 - [ ] Code follows [coding guidelines](../guidelines/design-guidelines)
 - [ ] Tests are passing locally
-- [ ] Linting passes (`pre-commit run --all-files`)
+- [ ] Relevant linting and type checks pass locally
 - [ ] Documentation is updated if needed
 
 ## Creating Your Pull Request
@@ -66,7 +66,8 @@ pytest tests/unit_tests/
 cd superset-frontend && npm run test
 
 # Run linting
-pre-commit run --all-files
+ruff check .
+cd superset-frontend && npm run lint
 
 # Commit with conventional format
 git add .
@@ -231,8 +232,8 @@ npm run test -- --coverage
 
 #### Linting Failures
 ```bash
-# Auto-fix many issues
-pre-commit run --all-files
+# Auto-fix many Python issues
+ruff check --fix .
 
 # Manual fixes may be needed for:
 # - MyPy type errors

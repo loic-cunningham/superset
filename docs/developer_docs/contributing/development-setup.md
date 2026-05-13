@@ -267,59 +267,6 @@ the prerequisites mentioned in [OS Dependencies](https://superset.apache.org/doc
 pip install -r requirements/development.txt
 ```
 
-### Git Hooks
-
-Superset uses Git pre-commit hooks courtesy of [pre-commit](https://pre-commit.com/).
-To install run the following:
-
-```bash
-pre-commit install
-```
-
-This will install the hooks in your local repository. From now on, a series of checks will
-automatically run whenever you make a Git commit.
-
-#### Running Pre-commit Manually
-
-You can also run the pre-commit checks manually in various ways:
-
-- **Run pre-commit on all files (same as CI):**
-
-  To run the pre-commit checks across all files in your repository, use the following command:
-
-  ```bash
-  pre-commit run --all-files
-  ```
-
-  This is the same set of checks that will run during CI, ensuring your changes meet the project's standards.
-
-- **Run pre-commit on a specific file:**
-
-  If you want to check or fix a specific file, you can do so by specifying the file path:
-
-  ```bash
-  pre-commit run --files path/to/your/file.py
-  ```
-
-  This will only run the checks on the file(s) you specify.
-
-- **Run a specific pre-commit check:**
-
-  To run a specific check (hook) across all files or a particular file, use the following command:
-
-  ```bash
-  pre-commit run <hook_id> --all-files
-  ```
-
-  Or for a specific file:
-
-  ```bash
-  pre-commit run <hook_id> --files path/to/your/file.py
-  ```
-
-  Replace `<hook_id>` with the ID of the specific hook you want to run. You can find the list
-  of available hooks in the `.pre-commit-config.yaml` file.
-
 ## Working with LLMs
 
 ### Environment Setup
@@ -335,7 +282,7 @@ curl -f http://localhost:8088/health && echo "✅ Superset ready"
 
 ### LLM Session Best Practices
 - Always validate environment setup first using the health checks above
-- Use focused validation commands: `pre-commit run` (not `--all-files`)
+- Use focused validation commands for the files and features you changed
 - **Read [LLMS.md](https://github.com/apache/superset/blob/master/LLMS.md) first** - Contains comprehensive development guidelines, coding standards, and critical refactor information
 - **Check platform-specific files** when available:
   - `CLAUDE.md` - For Claude/Anthropic tools
@@ -354,7 +301,7 @@ npm run test -- filename.test.tsx  # Run single test file
 npm run lint         # Linting and type checking
 
 # Backend validation
-pre-commit run mypy  # Type checking
+mypy superset path/to/file.py  # Type checking
 pytest              # Run all tests
 pytest tests/unit_tests/specific_test.py  # Run single test file
 pytest tests/unit_tests/  # Run all tests in directory
@@ -417,14 +364,11 @@ Or you can install it via our Makefile
 $ python3 -m venv venv # setup a python3 virtualenv
 $ source venv/bin/activate
 
-# install pip packages + pre-commit
+# Install pip packages and setup env
 $ make install
 
 # Install superset pip packages and setup env only
 $ make superset
-
-# Setup pre-commit only
-$ make pre-commit
 ```
 
 **Note: the FLASK_APP env var should not need to be set, as it's currently controlled
@@ -654,17 +598,6 @@ those specified under FEATURE_FLAGS in `superset_config.py`. For example, `DEFAU
 in combined feature flags of `{ 'FOO': True, 'BAR': True, 'BAZ': True }`.
 
 The current status of the usability of each flag (stable vs testing, etc) can be found in the [Feature Flags](/admin-docs/configuration/feature-flags) documentation.
-
-## Git Hooks
-
-Superset uses Git pre-commit hooks courtesy of [pre-commit](https://pre-commit.com/). To install run the following:
-
-```bash
-pip3 install -r requirements/development.txt
-pre-commit install
-```
-
-A series of checks will now run when you make a git commit.
 
 ## Linting
 

@@ -26,7 +26,7 @@ Apache Superset is a data visualization platform with Flask/Python backend and R
 
 ### Backend Type Safety
 - **Add type hints** - All new Python code needs proper typing
-- **MyPy compliance** - Run `pre-commit run mypy` to validate
+- **MyPy compliance** - Keep Python changes type-safe
 - **SQLAlchemy typing** - Use proper model annotations
 
 ## Code Standards
@@ -40,7 +40,7 @@ Apache Superset is a data visualization platform with Flask/Python backend and R
 
 ### Python Backend
 - **Type hints required** for all new code
-- **MyPy compliant** - run `pre-commit run mypy`
+- **MyPy compliant** - keep Python changes type-safe
 - **SQLAlchemy models** with proper typing
 - **pytest** for testing
 
@@ -96,21 +96,6 @@ Charts built from enriched datasets containing:
 - **`selectOption()`** - Select component helper
 - **React Testing Library** - NO Enzyme (removed)
 
-## Pre-commit Validation
-
-**Use pre-commit hooks for quality validation:**
-
-```bash
-# Install hooks
-pre-commit install
-
-# Quick validation (faster than --all-files)
-pre-commit run                    # Staged files only
-pre-commit run mypy              # Python type checking
-pre-commit run prettier          # Code formatting
-pre-commit run eslint            # Frontend linting
-```
-
 ## Development Guidelines
 
 - **Documentation**: Update docs/ for any user-facing changes
@@ -118,8 +103,7 @@ pre-commit run eslint            # Frontend linting
 - **Docstrings**: Required for new functions/classes
 - **Follow existing patterns**: Mimic code style, use existing libraries and utilities
 - **Type Safety**: This codebase is actively modernizing toward full TypeScript and type safety
-- **Always run `pre-commit run`** to validate changes before committing
 
 ---
 
-**Note**: This codebase is actively modernizing toward full TypeScript and type safety. Always run `pre-commit run` to validate changes. Follow the ongoing refactors section to avoid deprecated patterns.
+**Note**: This codebase is actively modernizing toward full TypeScript and type safety. Follow the ongoing refactors section to avoid deprecated patterns.

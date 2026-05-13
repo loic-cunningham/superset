@@ -124,8 +124,6 @@ cffi==2.0.0
     #   -c requirements/base-constraint.txt
     #   cryptography
     #   pynacl
-cfgv==3.4.0
-    # via pre-commit
 charset-normalizer==3.4.2
     # via
     #   -c requirements/base-constraint.txt
@@ -207,8 +205,6 @@ deprecation==2.1.0
     #   apache-superset
 dill==0.4.0
     # via pylint
-distlib==0.3.8
-    # via virtualenv
 dnspython==2.7.0
     # via
     #   -c requirements/base-constraint.txt
@@ -241,7 +237,6 @@ fastmcp==3.2.4
 filelock==3.20.3
     # via
     #   -c requirements/base-constraint.txt
-    #   virtualenv
 flask==2.3.3
     # via
     #   -c requirements/base-constraint.txt
@@ -419,8 +414,6 @@ humanize==4.12.3
     # via
     #   -c requirements/base-constraint.txt
     #   apache-superset
-identify==2.5.36
-    # via pre-commit
 idna==3.10
     # via
     #   -c requirements/base-constraint.txt
@@ -569,8 +562,6 @@ nh3==0.2.21
     # via
     #   -c requirements/base-constraint.txt
     #   apache-superset
-nodeenv==1.8.0
-    # via pre-commit
 numpy==1.26.4
     # via
     #   -c requirements/base-constraint.txt
@@ -670,7 +661,6 @@ platformdirs==4.3.8
     #   fastmcp
     #   pylint
     #   requests-cache
-    #   virtualenv
 pluggy==1.5.0
     # via pytest
 ply==3.11
@@ -681,8 +671,6 @@ polyline==2.0.2
     # via
     #   -c requirements/base-constraint.txt
     #   apache-superset
-pre-commit==4.1.0
-    # via apache-superset
 prison==0.2.1
     # via
     #   -c requirements/base-constraint.txt
@@ -857,7 +845,6 @@ pyyaml==6.0.2
     #   apispec
     #   fastmcp
     #   jsonschema-path
-    #   pre-commit
 redis==5.3.1
     # via
     #   -c requirements/base-constraint.txt
@@ -931,7 +918,6 @@ semver==3.0.4
 setuptools==80.9.0
     # via
     #   -c requirements/base-constraint.txt
-    #   nodeenv
     #   pandas-gbq
     #   pydata-google-auth
     #   zope-event
@@ -1087,8 +1073,6 @@ vine==5.1.0
     #   amqp
     #   celery
     #   kombu
-virtualenv==20.29.2
-    # via pre-commit
 watchdog==6.0.0
     # via
     #   -c requirements/base-constraint.txt

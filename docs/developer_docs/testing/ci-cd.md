@@ -31,7 +31,6 @@ Understanding Superset's continuous integration and deployment pipelines.
 ## Topics to be covered:
 
 - GitHub Actions workflows
-- Pre-commit hooks configuration
 - Automated testing pipelines
 - Code quality checks (ESLint, Prettier, Black, MyPy)
 - Security scanning (Dependabot, CodeQL)
@@ -39,22 +38,6 @@ Understanding Superset's continuous integration and deployment pipelines.
 - Release automation
 - Performance benchmarking
 - Coverage reporting and tracking
-
-## Pre-commit Hooks
-
-```bash
-# Install pre-commit hooks
-pre-commit install
-
-# Run all hooks on staged files
-pre-commit run
-
-# Run specific hook
-pre-commit run mypy
-
-# Run on all files (not just staged)
-pre-commit run --all-files
-```
 
 ## GitHub Actions
 

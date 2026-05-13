@@ -16,8 +16,7 @@
 # limitations under the License.
 #
 
-# Inspired from https://github.com/mpalmer/action-validator?tab=readme-ov-file#pre-commit-hook-example
-echo "Running pre-commit hook for GitHub Actions: https://github.com/mpalmer/action-validator"
+echo "Running GitHub Actions validation: https://github.com/mpalmer/action-validator"
 	for action in $(git ls-files .github/ | grep -E '^\.github/(workflows|actions)/.*\.ya?ml$'); do
   if action-validator "$action"; then
 	echo "✅ $action"

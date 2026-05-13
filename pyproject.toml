@@ -220,7 +220,6 @@ development = [
     "openapi-spec-validator",
     "parameterized",
     "pip",
-    "pre-commit",
     "progress>=1.5,<2",
     "psutil",
     "pyfakefs",
