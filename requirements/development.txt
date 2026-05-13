@@ -234,9 +234,6 @@ exceptiongroup==1.3.0
     # via fastmcp
 fastmcp==3.2.4
     # via apache-superset
-filelock==3.20.3
-    # via
-    #   -c requirements/base-constraint.txt
 flask==2.3.3
     # via
     #   -c requirements/base-constraint.txt
