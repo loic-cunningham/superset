@@ -17,8 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      issues: write
-      pull-requests: write
+      pull-requests: read
 
     steps:
       - name: Checkout repo
@@ -122,10 +121,6 @@ jobs:
 
             fs.writeFileSync('devin-request.json', JSON.stringify(requestBody, null, 2));
 
-            core.setOutput('pr_number', String(pr.number));
-            core.setOutput('pr_url', pr.html_url);
-            core.setOutput('pr_title', pr.title);
-
       - name: Create Devin session
         id: devin
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -166,35 +161,4 @@ jobs:
               .addLink(sessionUrl || sessionId, sessionUrl || `https://app.devin.ai/sessions/${sessionId}`)
               .write();
 
-      - name: Comment on PR
-        if: success()
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          PR_NUMBER: ${{ steps.prepare.outputs.pr_number }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          SESSION_ID: ${{ steps.devin.outputs.session_id }}
-          SESSION_URL: ${{ steps.devin.outputs.session_url }}
-        with:
-          script: |
-            const prNumber = Number(process.env.PR_NUMBER);
-            const sessionLink = process.env.SESSION_URL || `https://app.devin.ai/sessions/${process.env.SESSION_ID}`;
-            const body = [
-              '🧬 **Devin Mutation Testing** was launched for this PR.',
-              '',
-              `Session: ${sessionLink}`,
-              `Workflow run: ${process.env.RUN_URL}`,
-              '',
-              'Devin will:',
-              '1. Assess existing test coverage (triage)',
-              '2. Create foundation tests if needed',
-              '3. Run targeted mutation testing',
-              '4. Fix surviving mutation gaps and coverage holes',
-              '5. Post a detailed before/after report on this PR',
-            ].join('\n');
 
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body,
-            });
