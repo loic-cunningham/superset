@@ -1,0 +1,167 @@
+name: Devin Test-Quality Distillation (cron)
+
+# Periodically launches a Devin session that reads every committed
+# `.devin/mutation-testing/pr-*.md` log file, distills recurring patterns
+# and residual gaps, refreshes the `Test Quality` page on the repository's
+# GitHub Wiki (the live test-quality dashboard), and posts a short-form
+# pointer to each configured notification channel (Slack / Linear / Teams / email).
+#
+# This workflow does NOT open a pull request — dashboards don't belong in
+# the PR queue. The committed `docs/test-quality/README.md` is a seed/snapshot
+# only; the live, weekly-refreshed page lives on the GitHub Wiki at
+# `<repo>.wiki.git` and is rendered at https://github.com/<owner>/<repo>/wiki.
+#
+# The schedule trigger is intentionally commented out: enable it when you
+# want the loop to run on its own cadence. `workflow_dispatch` is always
+# available for manual runs and for demo purposes.
+
+on:
+  # schedule:
+  #   - cron: "0 13 * * 1"   # Mondays 13:00 UTC — pick whatever cadence fits your team.
+
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "How many days of PR logs to consider (default: 30)"
+        required: false
+        default: "30"
+        type: string
+      notification_channels:
+        description: |
+          Comma-separated channels for the short-form digest. Each entry is
+          `<type>:<target>`. Supported types: `slack`, `linear`, `teams`,
+          `email`. Example: `slack:#test-quality,linear:ENG`.
+          Leave empty to update only the wiki entry (no chat/issue notification).
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  launch-devin:
+    name: Launch Devin distillation session
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout repository (logs + templates)
+        uses: actions/checkout@v4
+        with:
+          # Shallow clone is enough; Devin re-checks out the repo inside its
+          # own sandbox. We only need to inspect log file presence and pass
+          # the prompt template to the API.
+          sparse-checkout: |
+            .devin/mutation-testing/
+            docs/test-quality/
+
+      - name: Inventory committed PR logs
+        id: inventory
+        run: |
+          shopt -s nullglob
+          logs=( .devin/mutation-testing/pr-*.md )
+          if [ ${#logs[@]} -eq 0 ]; then
+            echo "No pr-*.md log files committed yet — nothing to distill."
+            echo "log_count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Found ${#logs[@]} log file(s):"
+          printf '  %s\n' "${logs[@]}"
+          echo "log_count=${#logs[@]}" >> "$GITHUB_OUTPUT"
+
+      - name: Build distillation prompt
+        if: steps.inventory.outputs.log_count != '0'
+        id: prepare
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          LOOKBACK_DAYS: ${{ inputs.lookback_days || '30' }}
+          NOTIFICATION_CHANNELS: ${{ inputs.notification_channels || '' }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const promptTemplatePath = '.devin/mutation-testing/templates/cron_distill_prompt.md';
+            if (!fs.existsSync(promptTemplatePath)) {
+              core.setFailed(`Prompt template not found: ${promptTemplatePath}`);
+              return;
+            }
+            const promptTemplate = fs.readFileSync(promptTemplatePath, 'utf8')
+              .replace(/{{ NOTIFICATION_CHANNELS }}/g, process.env.NOTIFICATION_CHANNELS || '(none configured)');
+
+            const repoFullName = `${context.repo.owner}/${context.repo.repo}`;
+            const lookback = process.env.LOOKBACK_DAYS;
+
+            const prompt = [
+              `Repository: ${repoFullName}`,
+              `Default branch: ${context.payload.repository.default_branch}`,
+              `Distillation window: last ${lookback} days`,
+              `Notification channels: ${process.env.NOTIFICATION_CHANNELS || '(none — wiki only)'}`,
+              '',
+              promptTemplate,
+            ].join('\n');
+
+            const requestBody = {
+              prompt,
+              title: `Test-quality distillation (last ${lookback}d) — ${new Date().toISOString().slice(0,10)}`.slice(0, 80),
+              repos: [repoFullName],
+              tags: [
+                'github-actions',
+                'mutation-testing',
+                'cron-distill',
+                `repo-${context.repo.owner}-${context.repo.repo}`,
+              ],
+            };
+
+            fs.writeFileSync('devin-request.json', JSON.stringify(requestBody, null, 2));
+
+      - name: Create Devin session
+        if: steps.inventory.outputs.log_count != '0'
+        id: devin
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
+        with:
+          script: |
+            const fs = require('fs');
+            const apiKey = process.env.DEVIN_API_KEY;
+            const orgId = process.env.DEVIN_ORG_ID;
+            if (!apiKey || !orgId) {
+              core.setFailed('DEVIN_API_KEY and DEVIN_ORG_ID repository secrets are required.');
+              return;
+            }
+            const DEVIN_API_TIMEOUT_MS = 60_000;
+            let response;
+            try {
+              response = await fetch(`https://api.devin.ai/v3/organizations/${encodeURIComponent(orgId)}/sessions`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${apiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: fs.readFileSync('devin-request.json', 'utf8'),
+                signal: AbortSignal.timeout(DEVIN_API_TIMEOUT_MS),
+              });
+            } catch (err) {
+              if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+                core.setFailed(`Devin API request timed out after ${DEVIN_API_TIMEOUT_MS / 1000}s`);
+                return;
+              }
+              core.setFailed(`Devin API request failed: ${err && err.message ? err.message : err}`);
+              return;
+            }
+            const responseText = await response.text();
+            let responseBody;
+            try { responseBody = JSON.parse(responseText); } catch { responseBody = { raw_response: responseText }; }
+            if (!response.ok) {
+              core.setFailed(`Devin API request failed with ${response.status}: ${responseText}`);
+              return;
+            }
+            const sessionId = responseBody.session_id || '';
+            const sessionUrl = responseBody.url || (sessionId ? `https://app.devin.ai/sessions/${sessionId}` : '');
+            await core.summary
+              .addHeading('Devin test-quality distillation session launched')
+              .addLink(sessionUrl || sessionId, sessionUrl || `https://app.devin.ai/sessions/${sessionId}`)
+              .write();
