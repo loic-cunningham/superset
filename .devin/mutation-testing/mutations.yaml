@@ -1,0 +1,109 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Mutation spec for PR #20 — .devin/mutation-testing/scripts/ tooling.
+#
+# Each mutation targets a critical guarantee documented in the log file at
+# .devin/mutation-testing/pr-20-<DATE>-mutation-testing-scripts.md.
+
+targets:
+  - path: .devin/mutation-testing/scripts/lint_log.py
+  - path: .devin/mutation-testing/scripts/render_pr_comment.py
+  - path: .devin/mutation-testing/scripts/coverage_summary.py
+  - path: .devin/mutation-testing/scripts/mutation_runner.py
+
+test_paths:
+  - .devin/mutation-testing/scripts/tests/
+
+mutations:
+  # -----------------------------------------------------------------------
+  # lint_log.py — log-file validator
+  # -----------------------------------------------------------------------
+  - id: M1
+    description: "lint_log: invert status-value membership check"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    old: 'if status not in {"in_progress", "completed"}:'
+    new: 'if status in {"in_progress", "completed"}:'
+
+  - id: M2
+    description: "lint_log: invert section ordering comparison"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    old: "if idx < last_seen:"
+    new: "if idx > last_seen:"
+
+  - id: M3
+    description: "lint_log: drop survivor_focused from rerun_type allowed set"
+    file: .devin/mutation-testing/scripts/lint_log.py
+    old: 'if mt.get("rerun_type") not in {"full", "survivor_focused"}:'
+    new: 'if mt.get("rerun_type") not in {"full"}:'
+
+  # -----------------------------------------------------------------------
+  # render_pr_comment.py — Stage 3 PR-comment renderer
+  # -----------------------------------------------------------------------
+  - id: M4
+    description: "render_pr_comment: invert mode allow-list check"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    old: 'if mode not in {"checkpoint", "final"}:'
+    new: 'if mode in {"checkpoint", "final"}:'
+
+  - id: M5
+    description: "render_pr_comment: drop dict() copy of initial in checkpoint mode"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    old: "final = dict(initial)"
+    new: "final = initial"
+
+  - id: M6
+    description: "render_pr_comment: always render (newly fixed) suffix, including JA"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    old: 'suffix = " (newly fixed)" if entry.get("newly_fixed") and not japanese else ""'
+    new: 'suffix = " (newly fixed)" if entry.get("newly_fixed") else ""'
+
+  - id: M7
+    description: "render_pr_comment: kill_rate fallback to 100 instead of 0 when total is 0"
+    file: .devin/mutation-testing/scripts/render_pr_comment.py
+    old: "return round(killed / total * 100) if total else 0"
+    new: "return round(killed / total * 100) if total else 100"
+
+  # -----------------------------------------------------------------------
+  # coverage_summary.py — pytest-cov JSON reshaper
+  # -----------------------------------------------------------------------
+  - id: M8
+    description: "coverage_summary: stop sorting per-file entries by path"
+    file: .devin/mutation-testing/scripts/coverage_summary.py
+    old: 'for path, file_data in sorted(cov_data.get("files", {}).items()):'
+    new: 'for path, file_data in cov_data.get("files", {}).items():'
+
+  - id: M9
+    description: "coverage_summary: truncate instead of round in _pct"
+    file: .devin/mutation-testing/scripts/coverage_summary.py
+    old: "return int(round(num))"
+    new: "return int(num)"
+
+  # -----------------------------------------------------------------------
+  # mutation_runner.py — apply/run/restore engine
+  # -----------------------------------------------------------------------
+  - id: M10
+    description: "mutation_runner: classify boundary shift (failed >= 0)"
+    file: .devin/mutation-testing/scripts/mutation_runner.py
+    old: "if failed > 0:"
+    new: "if failed >= 0:"
+
+  - id: M11
+    description: "mutation_runner: error count overwrites instead of adding to failed"
+    file: .devin/mutation-testing/scripts/mutation_runner.py
+    old: "failed += int(m_error.group(1))"
+    new: "failed = int(m_error.group(1))"
