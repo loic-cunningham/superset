@@ -1,0 +1,140 @@
+# Mutation testing spec — PR #30
+# fix(rls): prevent double-apply when converting physical dataset to virtual
+#
+# Targets the exclusion-filter logic added to apply_rls /
+# get_predicates_for_table / collect_rls_predicates_for_sql, plus the
+# call sites that pass exclude_dataset_id through from
+# SqlaTable.get_extra_cache_keys and ExploreMixin._get_from_clause.
+test_paths:
+  - tests/unit_tests/sql_lab_test.py
+  - tests/unit_tests/security/guest_rls_test.py
+  - tests/unit_tests/models/test_virtual_dataset_format.py
+  - tests/unit_tests/models/test_double_rls_virtual_dataset.py
+mutations:
+  - id: M1
+    description: "Hero: invert exclusion operator (SqlaTable.id != → ==), keeping clause count."
+    file: superset/utils/rls.py
+    indent: 8
+    old: |
+      filters.append(SqlaTable.id != exclude_dataset_id)
+    new: |
+      filters.append(SqlaTable.id == exclude_dataset_id)
+
+  - id: M2
+    description: "Hardcode the exclusion operand to 0 (SqlaTable.id != 0), keeping clause count."
+    file: superset/utils/rls.py
+    indent: 8
+    old: |
+      filters.append(SqlaTable.id != exclude_dataset_id)
+    new: |
+      filters.append(SqlaTable.id != 0)
+
+  - id: M3
+    description: "Invert the guard (is not None → is None) so exclusion is added for None and skipped for ids."
+    file: superset/utils/rls.py
+    indent: 4
+    old: |
+      if exclude_dataset_id is not None:
+          filters.append(SqlaTable.id != exclude_dataset_id)
+    new: |
+      if exclude_dataset_id is None:
+          filters.append(SqlaTable.id != exclude_dataset_id)
+
+  - id: M4
+    description: "Drop exclude_dataset_id propagation in apply_rls() (force None at the get_predicates_for_table call)."
+    file: superset/utils/rls.py
+    indent: 0
+    old: |2
+                      table,
+                      database,
+                      database.get_default_catalog(),
+                      exclude_dataset_id=exclude_dataset_id,
+                  )
+    new: |2
+                      table,
+                      database,
+                      database.get_default_catalog(),
+                      exclude_dataset_id=None,
+                  )
+
+  - id: M5
+    description: "Drop exclude_dataset_id propagation in collect_rls_predicates_for_sql() (force None at the call)."
+    file: superset/utils/rls.py
+    indent: 0
+    old: |2
+                          table,
+                          database,
+                          default_catalog,
+                          exclude_dataset_id=exclude_dataset_id,
+                      )
+    new: |2
+                          table,
+                          database,
+                          default_catalog,
+                          exclude_dataset_id=None,
+                      )
+
+  - id: M6
+    description: "Drop self.id at SqlaTable.get_extra_cache_keys call site (force None)."
+    file: superset/connectors/sqla/models.py
+    indent: 16
+    old: |
+      self.sql,
+      self.database,
+      self.catalog,
+      self.schema or default_schema or "",
+      exclude_dataset_id=self.id,
+    new: |
+      self.sql,
+      self.database,
+      self.catalog,
+      self.schema or default_schema or "",
+      exclude_dataset_id=None,
+
+  - id: M7
+    description: "Drop self_id at ExploreMixin._get_from_clause call site (force None)."
+    file: superset/models/helpers.py
+    indent: 24
+    old: |
+      self.database,
+      self.catalog,
+      self.schema or default_schema or "",
+      statement,
+      exclude_dataset_id=self_id,
+    new: |
+      self.database,
+      self.catalog,
+      self.schema or default_schema or "",
+      statement,
+      exclude_dataset_id=None,
+
+  - id: M8
+    description: "Remove getattr fallback for ``id`` in ExploreMixin (breaks non-dataset subclasses)."
+    file: superset/models/helpers.py
+    indent: 16
+    old: |
+      self_id = getattr(self, "id", None)
+    new: |
+      self_id = self.id
+
+  - id: M9
+    description: "Flip include_global_guest_rls=False → True (would re-enable double-apply of global guest rules)."
+    file: superset/utils/rls.py
+    indent: 8
+    old: |
+      for predicate in dataset.get_sqla_row_level_filters(
+          include_global_guest_rls=False
+      )
+    new: |
+      for predicate in dataset.get_sqla_row_level_filters(
+          include_global_guest_rls=True
+      )
+
+  - id: M10
+    description: "Change and_(*filters) → or_(*filters): lookup matches if ANY filter clause holds."
+    file: superset/utils/rls.py
+    indent: 4
+    old: |
+      dataset = db.session.query(SqlaTable).filter(and_(*filters)).one_or_none()
+    new: |
+      dataset = db.session.query(SqlaTable).filter(or_(*filters)).one_or_none()

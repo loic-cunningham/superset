@@ -284,3 +284,38 @@ def test_filter_grouping_preserved(
 
         # Should have 2 filters: one ungrouped, one grouped (ORed)
         assert len(filters) == 2
+
+
+def test_get_extra_cache_keys_passes_self_id_to_collect(app: Flask) -> None:
+    """
+    ``SqlaTable.get_extra_cache_keys`` must forward ``self.id`` as
+    ``exclude_dataset_id`` when delegating to
+    ``collect_rls_predicates_for_sql``. Without this, the cache key for a
+    virtual dataset is computed using the same self-RLS that's also applied
+    on the outer WHERE, leading to silently incorrect cache reuse.
+    """
+    from superset.connectors.sqla.models import SqlaTable
+
+    mock_self = MagicMock(spec=SqlaTable)
+    mock_self.id = 42
+    mock_self.sql = "SELECT * FROM orders"
+    mock_self.catalog = None
+    mock_self.schema = "public"
+    mock_self.is_virtual = True
+    mock_self.has_extra_cache_key_calls.return_value = False
+    mock_self.database = MagicMock()
+    mock_self.database.get_default_schema.return_value = "public"
+
+    with patch(
+        "superset.utils.rls.collect_rls_predicates_for_sql",
+        return_value=["tenant_id = 5"],
+    ) as collect:
+        SqlaTable.get_extra_cache_keys(mock_self, {})
+
+    collect.assert_called_once_with(
+        "SELECT * FROM orders",
+        mock_self.database,
+        None,
+        "public",
+        exclude_dataset_id=42,
+    )

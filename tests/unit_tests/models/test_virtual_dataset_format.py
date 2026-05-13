@@ -191,6 +191,32 @@ class TestVirtualDatasetWithRLS:
         # But the column must still be present
         assert "is_green" in inner_sql
 
+    @patch("superset.models.helpers.apply_rls", return_value=True)
+    def test_apply_rls_receives_self_id_as_exclude_dataset_id(
+        self,
+        mock_apply_rls: MagicMock,
+        virtual_datasource: MagicMock,
+        app: Flask,
+    ) -> None:
+        """
+        ``ExploreMixin._get_from_clause`` must forward the dataset's own id to
+        ``apply_rls`` as ``exclude_dataset_id``. Without this, the inner SQL
+        of a virtual dataset can still match its own row during RLS lookup
+        and double-apply the same predicate on top of the outer WHERE.
+        """
+        virtual_datasource.id = 4242
+        _set_virtual_sql(
+            virtual_datasource, "SELECT pen_id, is_green FROM public.pens"
+        )
+
+        _get_subquery_sql(virtual_datasource)
+
+        # apply_rls is called once per parsed statement; for a single-statement
+        # virtual dataset SQL we expect at least one call carrying the id.
+        assert mock_apply_rls.call_count >= 1
+        for call in mock_apply_rls.call_args_list:
+            assert call.kwargs.get("exclude_dataset_id") == 4242
+
 
 # ---------------------------------------------------------------------------
 # 2. apply_rls() return value
