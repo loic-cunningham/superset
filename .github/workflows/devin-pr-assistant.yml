@@ -86,6 +86,7 @@ jobs:
               'export GH_TOKEN="$GITHUB_TOKEN"',
               'gh auth status',
               'gh auth setup-git',
+              'git config --global --unset-all url.https://git-manager.devin.ai/proxy/github.com/.insteadOf || true',
               `git remote set-url origin https://github.com/${context.repo.owner}/${context.repo.repo}.git`,
               `GIT_TERMINAL_PROMPT=0 gh pr checkout ${pr.number} --repo ${context.repo.owner}/${context.repo.repo}`,
               '',
