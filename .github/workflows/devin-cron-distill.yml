@@ -2,14 +2,23 @@ name: Devin Test-Quality Distillation (cron)
 
 # Periodically launches a Devin session that reads every committed
 # `.devin/mutation-testing/pr-*.md` log file, distills recurring patterns
-# and residual gaps, refreshes the `Test Quality` page on the repository's
-# GitHub Wiki (the live test-quality dashboard), and posts a short-form
-# pointer to each configured notification channel (Slack / Linear / Teams / email).
+# and residual gaps, and writes the result to the `Test Quality` page set
+# on the repository's GitHub Wiki (the live test-quality dashboard). The
+# wiki is organised as a dated history:
+#
+#   * `Test-Quality.md`              — index page (latest pointer + history table)
+#   * `Test-Quality-YYYY-MM-DD.md`   — one append-only snapshot per run
+#
+# Each run also reads every prior `Test-Quality-YYYY-MM-DD.md` so the new
+# entry can reference cross-run trends and mark prior recommendations that
+# subsequent PRs have addressed. A short-form pointer (title + headline
+# summary + link to the new dated entry) is then posted to each configured
+# notification channel (Slack / Linear / Teams / email).
 #
 # This workflow does NOT open a pull request — dashboards don't belong in
 # the PR queue. The committed `docs/test-quality/README.md` is a seed/snapshot
-# only; the live, weekly-refreshed page lives on the GitHub Wiki at
-# `<repo>.wiki.git` and is rendered at https://github.com/<owner>/<repo>/wiki.
+# only; the live page set lives on the GitHub Wiki at `<repo>.wiki.git` and
+# is rendered at https://github.com/<owner>/<repo>/wiki.
 #
 # The schedule trigger is intentionally commented out: enable it when you
 # want the loop to run on its own cadence. `workflow_dispatch` is always
@@ -31,7 +40,7 @@ on:
           Comma-separated channels for the short-form digest. Each entry is
           `<type>:<target>`. Supported types: `slack`, `linear`, `teams`,
           `email`. Example: `slack:#test-quality,linear:ENG`.
-          Leave empty to update only the wiki entry (no chat/issue notification).
+          Leave empty to update only the wiki (no chat/issue notification).
         required: false
         default: ""
         type: string

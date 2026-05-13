@@ -25,6 +25,8 @@ This page is the org-wide view of how well our test suite catches real regressio
 
 Coverage tells you which lines executed. **Kill rate tells you which lines are actually protected by assertions that would fail if the behaviour changed.** When you ask "is our test suite getting stronger?", this is the metric that answers honestly.
 
+> **Where the live dashboard lives.** This file is a committed seed/snapshot only. The live dashboard is the **`Test Quality` page set on the [GitHub Wiki](https://github.com/loic-cunningham/superset/wiki/Test-Quality)** — `Test-Quality.md` is the index page, and each distillation run pushes a new dated entry `Test-Quality-YYYY-MM-DD.md` alongside it so the full history is preserved as append-only snapshots.
+
 ---
 
 ## What an engineering leader sees
@@ -84,17 +86,22 @@ This is the closed loop: real PR data → distilled patterns → targeted uplift
 
 ## How this is refreshed
 
-This file is a **seed/snapshot** committed alongside the code so the dashboard exists even before the loop has run. The **live, weekly-refreshed page lives on the GitHub Wiki** — that's where this fork's `Test Quality` page is rewritten each cron pass and where a VP of engineering or PM naturally reads project documentation.
+This file is a **seed/snapshot** committed alongside the code so the dashboard exists even before the loop has run. The **live dashboard lives on the GitHub Wiki** — that's where the `Test Quality` page set is refreshed each cron pass and where a VP of engineering or PM naturally reads project documentation.
+
+The wiki uses a **dated history** layout so every prior distillation is preserved as its own append-only snapshot, not overwritten in place:
+
+* [`Test-Quality.md`](https://github.com/loic-cunningham/superset/wiki/Test-Quality) — the index page. One-line latest-run summary, a chronological history table, and the workflow description. Refreshed in place each pass.
+* `Test-Quality-YYYY-MM-DD.md` — one **new** page per distillation run, written by the cron session. Contains the full distilled report (headline numbers, change-vs-previous-run, per-PR snapshot table, kill-rate trends, recurring patterns, recommended next actions, JA summary). Carries a YAML front matter block so the next run can parse it programmatically without re-reading the markdown body. **Never edited or deleted** after it lands — the closed-loop value comes from being able to read the trend across runs, not from a single ever-mutating page.
 
 [`.github/workflows/devin-cron-distill.yml`](../../.github/workflows/devin-cron-distill.yml) spawns a Devin session on a configurable schedule. That session:
 
-1. Reads every `.devin/mutation-testing/pr-*.md` log file in the repo.
-2. Recomputes the headline numbers and the trend chart.
-3. Identifies recurring weak-spot patterns across PRs.
-4. Pushes the distilled report to the [`Test Quality` page on the GitHub Wiki](https://github.com/loic-cunningham/superset/wiki/Test-Quality) (the live dashboard).
-5. Shares the wiki page **title + headline summary + link** through whatever notification channels the team configures — Slack, Linear, email digest, Teams (see the workflow's `notification_channels` input). The dashboard itself stays on the wiki; chat surfaces only carry the pointer.
+1. Reads every `.devin/mutation-testing/pr-*.md` log file in the repo (window default: 30 days).
+2. Clones the wiki and **reads every prior `Test-Quality-YYYY-MM-DD.md` entry** — both their YAML front matter (for cross-run trend) and the most recent entry's recommendations (to mark items that subsequent PRs have addressed versus still-open).
+3. Writes a new dated entry `Test-Quality-$(date -u +%Y-%m-%d).md` (or `-HHMM` if a same-day re-run) with the full distilled report.
+4. Refreshes the index page `Test-Quality.md` in place: pointer to the new entry + a new row prepended to the history table.
+5. Shares **title + headline summary + link to the new dated entry** through whatever notification channels the team configures — Slack, Linear, email digest, Teams (see the workflow's `notification_channels` input). The dashboard itself stays on the wiki; chat surfaces only carry the pointer.
 
-The committed file you are reading is intentionally append-only between refreshes — it's the artifact the repo carries; the GitHub Wiki page is the working surface. A senior engineer auditing "did Devin actually verify the change in PR #N?" follows the link to the per-PR log file below.
+The committed file you are reading is intentionally append-only between refreshes — it's the artifact the repo carries; the GitHub Wiki page set is the working surface. A senior engineer auditing "did Devin actually verify the change in PR #N?" follows the link to the per-PR log file below.
 
 ---
 
@@ -114,5 +121,5 @@ Each log file is the full structured record of one PR's run: triage decision, fo
 
 直近 30 日の見出し: 2 PR 処理 · 2/2 が最終キル率 100% · 1/2 で基盤フェーズが必要 · 新規テスト 69 件追加 · 安全でないキル率で残っている PR は 0。
 
-このページは `.devin/mutation-testing/pr-*.md` のログファイルから集約されます。本番では `devin-cron-distill.yml` の cron が Devin セッションを起動し、週次でこのページを再生成し、推奨アクション (`Recommended next actions` の表) を更新します。チームメンバーはその推奨に対して Devin セッションを起動し、ミューテーションテストで結果を検証します — 真のループは「実 PR データ → 蒸留パターン → 重点的なカバレッジ強化 → ミューテーション検証 → 知識ベースへ還流」です。
+このページは `.devin/mutation-testing/pr-*.md` のログファイルから集約されます。本番では `devin-cron-distill.yml` の cron が Devin セッションを起動し、各実行で **新しい日付入りエントリ** (`Test-Quality-YYYY-MM-DD.md`) を Wiki に追加し、インデックスページ (`Test-Quality.md`) を更新します。過去のエントリは追記専用の履歴として保持されます。エージェントは新エントリを書く前に過去のエントリを読み、複数実行にまたがるトレンド分析と推奨アクションの解消状況を新エントリに反映します。チームメンバーはその推奨に対して Devin セッションを起動し、ミューテーションテストで結果を検証します — 真のループは「実 PR データ → 蒸留パターン → 重点的なカバレッジ強化 → ミューテーション検証 → 知識ベースへ還流」です。
 </details>
