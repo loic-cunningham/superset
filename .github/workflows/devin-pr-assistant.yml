@@ -82,10 +82,13 @@ jobs:
               `Head SHA: ${pr.head.sha}`,
               `Triggered by: @${context.actor}`,
               '',
-              'Work directly on this open PR. Start by checking out the PR branch with GitHub CLI:',
+              'Work directly on this open PR. Start by forcing GitHub CLI to use the injected workflow token and checking out the PR branch:',
+              'export GH_TOKEN="$GITHUB_TOKEN"',
+              'gh auth status',
+              'gh auth setup-git',
               `gh pr checkout ${pr.number} --repo ${context.repo.owner}/${context.repo.repo}`,
               '',
-              'A GitHub token is available as GITHUB_TOKEN for gh/API operations. Verify gh auth before making changes. Review the PR diff and context, follow the custom instructions below, push any necessary commits to the PR branch, and comment on the PR with a concise summary when finished.',
+              'A GitHub token is available as both GITHUB_TOKEN and GH_TOKEN for gh/API operations. Do not print token values. Verify gh auth before making changes. Review the PR diff and context, follow the custom instructions below, push any necessary commits to the PR branch, and comment on the PR with a concise summary when finished.',
               '',
               'Custom instructions:',
               instructions,
@@ -98,6 +101,11 @@ jobs:
               session_secrets: [
                 {
                   key: 'GITHUB_TOKEN',
+                  value: process.env.DEVIN_GITHUB_TOKEN,
+                  sensitive: true,
+                },
+                {
+                  key: 'GH_TOKEN',
                   value: process.env.DEVIN_GITHUB_TOKEN,
                   sensitive: true,
                 },
