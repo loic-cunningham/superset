@@ -83,8 +83,9 @@ jobs:
               instructions.push(`--- BEGIN ${file} ---\n${content}\n--- END ${file} ---`);
             }
 
+            const repoFullName = `${context.repo.owner}/${context.repo.repo}`;
             const prompt = [
-              `Repository: ${context.repo.owner}/${context.repo.repo}`,
+              `Repository: ${repoFullName}`,
               `Pull request: #${pr.number} - ${pr.title}`,
               `Pull request URL: ${pr.html_url}`,
               `Base branch: ${pr.base.ref}`,
@@ -92,8 +93,15 @@ jobs:
               `Head repository: ${pr.head.repo.full_name}`,
               `Head SHA: ${pr.head.sha}`,
               '',
-              'You are running the mutation testing workflow on this PR. Follow the instructions below end-to-end.',
-              'Work directly on this open PR. Check out the PR branch, follow the full lifecycle (triage → [foundation] → measure → log → improve → verify → commit → report), push commits to the PR branch, and post the final PR comment.',
+              'You are running the mutation testing workflow on this PR. The Devin GitHub integration is already authenticated for this repo, so plain git commands work without any extra setup. Check out the PR branch with:',
+              '```',
+              `git fetch origin pull/${pr.number}/head:${pr.head.ref}`,
+              `git checkout ${pr.head.ref}`,
+              '```',
+              '',
+              'Do NOT run `gh auth login`, `gh auth setup-git`, `gh pr checkout`, `git remote set-url`, or `export GH_TOKEN=...`. Those override the proxy credential helper and break git auth in this environment. Push commits with `git push origin <branch>` and post PR comments with the built-in `git_comment` tool.',
+              '',
+              'Follow the full lifecycle (triage → [foundation] → measure → log → improve → verify → commit → report), push commits to the PR branch, and post the final PR comment.',
               '',
               'CRITICAL: All outputs (foundation test plan, mutation testing log, PR comments) MUST follow the corresponding templates EXACTLY. These are the ONLY valid formats. Do not create custom formats.',
               '',
@@ -103,7 +111,7 @@ jobs:
             const requestBody = {
               prompt,
               title: `Mutation Testing: PR #${pr.number} — ${pr.title}`.slice(0, 80),
-              repos: [`${context.repo.owner}/${context.repo.repo}`],
+              repos: [repoFullName],
               tags: [
                 'github-actions',
                 'mutation-testing',
@@ -127,15 +135,12 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-
             const apiKey = process.env.DEVIN_API_KEY;
             const orgId = process.env.DEVIN_ORG_ID;
-
             if (!apiKey || !orgId) {
               core.setFailed('DEVIN_API_KEY and DEVIN_ORG_ID repository secrets are required.');
               return;
             }
-
             const response = await fetch(`https://api.devin.ai/v3/organizations/${encodeURIComponent(orgId)}/sessions`, {
               method: 'POST',
               headers: {
@@ -144,25 +149,16 @@ jobs:
               },
               body: fs.readFileSync('devin-request.json', 'utf8'),
             });
-
             const responseText = await response.text();
             let responseBody;
-            try {
-              responseBody = JSON.parse(responseText);
-            } catch {
-              responseBody = { raw_response: responseText };
-            }
-
+            try { responseBody = JSON.parse(responseText); } catch { responseBody = { raw_response: responseText }; }
             if (!response.ok) {
               core.setFailed(`Devin API request failed with ${response.status}: ${responseText}`);
               return;
             }
-
             fs.writeFileSync('devin-response.json', JSON.stringify(responseBody, null, 2));
-
             const sessionId = responseBody.session_id || '';
             const sessionUrl = responseBody.url || (sessionId ? `https://app.devin.ai/sessions/${sessionId}` : '');
-
             core.setOutput('session_id', sessionId);
             core.setOutput('session_url', sessionUrl);
             await core.summary
