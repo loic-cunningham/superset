@@ -132,12 +132,33 @@ Reason: {{triage_reasoning}}
 Uncovered PR-changed lines:
 - {{file:line_range — description}}
 
+## Weak spot analysis
+
+Pre-mutation coverage analysis identified these weak spots for targeted mutation design:
+- {{weak_spot_1 — e.g., "bigquery.py:_information_schema_ref has 0% branch coverage on escaping paths"}}
+- {{weak_spot_2 — e.g., "hive.py:df_to_sql LIKE escaping is covered but never asserted with special characters"}}
+- {{weak_spot_3}}
+
+Failure area coverage:
+| Failure area | Applicable? | Mutations targeting it |
+|---|---|---|
+| Validation/guards | {{yes/no}} | {{M_ids or "n/a"}} |
+| Data integrity | {{yes/no}} | {{M_ids or "n/a"}} |
+| Error handling | {{yes/no}} | {{M_ids or "n/a"}} |
+| Security boundaries | {{yes/no}} | {{M_ids or "n/a"}} |
+| Control flow | {{yes/no}} | {{M_ids or "n/a"}} |
+| Boundary conditions | {{yes/no}} | {{M_ids or "n/a"}} |
+| Configuration/wiring | {{yes/no}} | {{M_ids or "n/a"}} |
+| Output contracts | {{yes/no}} | {{M_ids or "n/a"}} |
+
 ## Initial mutation plan
 
-| ID | File | Mutation | Category | Expected |
-|---|---|---|---|---|
-| M1 | {{file}} | {{description}} | {{category}} | {{strength/gap}} |
-| M2 | {{file}} | {{description}} | {{category}} | {{strength/gap}} |
+| ID | File | Mutation | Category | Breaking likelihood | Rationale |
+|---|---|---|---|---|---|
+| M1 | {{file}} | {{description}} | {{category}} | {{high/medium/low}} | {{why this mutation targets an identified weak spot}} |
+| M2 | {{file}} | {{description}} | {{category}} | {{high/medium/low}} | {{why this mutation targets an identified weak spot}} |
+
+Gap/strength ratio: {{gap_count}}/{{total}} gap mutations ({{percent}}%)
 
 ## Initial mutation results
 
@@ -184,4 +205,11 @@ Kill rate: {{killed}}/{{valid}} ({{percent}}) — {{full|survivor_focused}} reru
 | {{area_2}} | {{test_description}} | {{reason}} |
 
 These are coverage opportunities identified from term-missing output and behavioral analysis, not just surviving mutations.
+
+## Mutation quality self-assessment
+
+- Initial kill rate: {{percent}} — {{assessment: e.g., "mutations were well-targeted" if 50-80%, or "mutations could have been harder" if >80%}}
+- Gap/strength ratio: {{gap_count}}/{{total}} ({{percent}}% gap)
+- Failure areas covered: {{count}}/{{applicable_count}}
+- Mutations informed by coverage analysis: {{count}}/{{total}}
 ```

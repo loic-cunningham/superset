@@ -137,25 +137,48 @@ Reason: Existing tests cover most changed behavior (163 passing), but some escap
 | starrocks.py | 86% | 85% |
 | **TOTAL** | **61%** | **36%** |
 
+## Weak spot analysis
+
+Pre-mutation coverage analysis identified these weak spots for targeted mutation design:
+- bigquery.py: `_information_schema_ref` has only 24% branch coverage — escaping of catalog and schema components is never asserted
+- gsheets.py: `get_extra_table_metadata` has 68% branch coverage — double-quote escaping in `GET_METADATA` SQL string has no test
+- hive.py: only 14% branch coverage — `df_to_sql` schema escaping in `SHOW TABLES IN` is covered by line count but never asserted with special characters
+- hive.py: `_partition_query` escaping is exercised but test inputs lack special characters
+- postgres.py: early return condition in `get_prequeries` has branch coverage but only for the happy path
+
+Failure area coverage:
+| Failure area | Applicable? | Mutations targeting it |
+|---|---|---|
+| Validation/guards | yes | M8, M13 |
+| Data integrity | yes | M1–M7, M9–M12, M14–M15 |
+| Error handling | no | n/a |
+| Security boundaries | yes | M1–M15 (SQL injection prevention) |
+| Control flow | yes | M13 |
+| Boundary conditions | yes | M7 (LIKE wildcards) |
+| Configuration/wiring | no | n/a |
+| Output contracts | no | n/a |
+
 ## Initial mutation plan
 
-| ID | File | Mutation | Category | Expected |
-|---|---|---|---|---|
-| M1 | postgres.py | Skip double-quote escaping in search_path | Missing preprocessing | strength |
-| M2 | db2.py | Skip double-quote escaping in current_schema | Missing preprocessing | strength |
-| M3 | databricks.py | Skip backtick escaping for catalog | Missing preprocessing | strength |
-| M4 | databricks.py | Skip backtick escaping for schema | Missing preprocessing | strength |
-| M5 | starrocks.py | Skip double-quote escaping in EXECUTE AS | Missing preprocessing | strength |
-| M6 | hive.py | Skip backtick escaping in SHOW VIEWS | Missing preprocessing | strength |
-| M7 | hive.py | Skip LIKE wildcard escaping in df_to_sql | Missing preprocessing | strength |
-| M8 | hive.py | Remove ESCAPE clause from SHOW TABLES LIKE | Removed guard | strength |
-| M9 | bigquery.py | Skip backtick escaping for schema in _information_schema_ref | Missing preprocessing | gap |
-| M10 | bigquery.py | Skip backtick escaping for catalog in _information_schema_ref | Missing preprocessing | gap |
-| M11 | gsheets.py | Skip double-quote escaping in GET_METADATA | Missing preprocessing | gap |
-| M12 | hive.py | Skip backtick escaping for table in _partition_query | Missing preprocessing | strength |
-| M13 | postgres.py | Invert early return condition | Inverted condition | strength |
-| M14 | hive.py | Skip backtick escaping for schema in _partition_query | Missing preprocessing | strength |
-| M15 | hive.py | Skip schema escaping in df_to_sql SHOW TABLES IN | Missing preprocessing | gap |
+| ID | File | Mutation | Category | Breaking likelihood | Rationale |
+|---|---|---|---|---|---|
+| M9 | bigquery.py | Skip backtick escaping for schema in _information_schema_ref | Missing preprocessing | high | 24% branch coverage; no test asserts on escaped schema in generated SQL |
+| M10 | bigquery.py | Skip backtick escaping for catalog in _information_schema_ref | Missing preprocessing | high | Same function, catalog component also unasserted |
+| M11 | gsheets.py | Skip double-quote escaping in GET_METADATA | Missing preprocessing | high | No test exercises get_extra_table_metadata with special-character inputs |
+| M15 | hive.py | Skip schema escaping in df_to_sql SHOW TABLES IN | Missing preprocessing | high | Line covered but no assertion verifies escaped schema in SQL output |
+| M1 | postgres.py | Skip double-quote escaping in search_path | Missing preprocessing | medium | test_get_prequeries exists but may use inputs without special chars |
+| M2 | db2.py | Skip double-quote escaping in current_schema | Missing preprocessing | medium | Similar pattern to postgres — test exists but input strength unclear |
+| M3 | databricks.py | Skip backtick escaping for catalog | Missing preprocessing | medium | test_get_prequeries covers this path |
+| M4 | databricks.py | Skip backtick escaping for schema | Missing preprocessing | medium | Same test file covers schema path |
+| M5 | starrocks.py | Skip double-quote escaping in EXECUTE AS | Missing preprocessing | medium | test_impersonation_username exists |
+| M6 | hive.py | Skip backtick escaping in SHOW VIEWS | Missing preprocessing | medium | test_get_view_names_escapes_schema directly tests this |
+| M7 | hive.py | Skip LIKE wildcard escaping in df_to_sql | Boundary condition | medium | test_df_to_sql_escapes_like_wildcards targets this specifically |
+| M8 | hive.py | Remove ESCAPE clause from SHOW TABLES LIKE | Removed guard | medium | Same test covers ESCAPE clause |
+| M12 | hive.py | Skip backtick escaping for table in _partition_query | Missing preprocessing | medium | test_partition_query_escapes_identifiers covers this |
+| M13 | postgres.py | Invert early return condition | Inverted condition | low | Directly tested by test_get_prequeries happy path |
+| M14 | hive.py | Skip backtick escaping for schema in _partition_query | Missing preprocessing | medium | Same test as M12 |
+
+Gap/strength ratio: 9/15 gap mutations (60%)
 
 ## Initial mutation results
 
@@ -219,3 +242,12 @@ All 15 mutations killed. The 4 surviving mutations were all cases where the PR's
 | BigQuery `get_materialized_view_names` | Same as above for materialized views | Escaped identifier in SQL is not verified |
 | Hive file upload paths in `df_to_sql` | Test the CSV/TSV upload branches | Large uncovered section near the escaping changes, though not PR-changed lines |
 | GSheets `latest_partition` | Test quote escaping in partition query | Similar pattern to `get_extra_table_metadata` but for partitions |
+
+These are coverage opportunities identified from term-missing output and behavioral analysis, not just surviving mutations.
+
+## Mutation quality self-assessment
+
+- Initial kill rate: 73% — mutations were well-targeted; 4 survivors all revealed real test gaps
+- Gap/strength ratio: 9/15 (60% gap)
+- Failure areas covered: 4/8 (validation, data integrity, security, boundary conditions)
+- Mutations informed by coverage analysis: 15/15
