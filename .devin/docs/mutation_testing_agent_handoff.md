@@ -611,93 +611,61 @@ See `template_03_final_report.example.md` for a correctly filled example based o
 
 ---
 
-# Good Mutation Examples from PR #4
+# Lessons Learned from Past Mutation Testing Runs
 
-PR #4 added destructive-DDL blocking to MCP `execute_sql`.
+These lessons are distilled from real mutation testing runs. They capture patterns and pitfalls that apply to any codebase, not just this one.
 
-Critical guarantees:
+## Lesson 1: Pre-existing failures poison results
 
-- block `DROP`, `TRUNCATE`, `ALTER`,
-- render Jinja before validation,
-- fail closed on parse errors,
-- block before `database.execute()`,
-- allow safe DML such as `INSERT`.
+A pre-existing test failure unrelated to the PR can mask real mutation results. If `pytest -x` (fail-fast) is used, the runner stops at the pre-existing failure for every mutation, falsely inflating the kill rate. Always run the full targeted suite without `-x` and deselect known pre-existing failures before starting.
 
-## Strength mutations
+## Lesson 2: Coverage gaps are not the same as mutation gaps
 
-These were killed and showed meaningful test strength.
+Fixing only surviving mutations is insufficient. The `term-missing` output from coverage reports reveals uncovered lines that no mutation targeted. A function may have tests that exercise it, but never assert on the specific output the PR changed (e.g., escaping, formatting, ordering). Review both mutation survivors and coverage gaps independently.
 
-| Mutation | Why it is good | What it proved |
-|---|---|---|
-| Remove `exp.Drop` from `destructive_nodes` | Realistic omission from a destructive AST-node list. | DROP behavior is strongly covered across parser and MCP tests. |
-| Remove `exp.TruncateTable` from `destructive_nodes` | `TRUNCATE` has a specific parser node and is easy to miss. | TRUNCATE has explicit parser and MCP coverage. |
-| Remove `exp.Alter` from `destructive_nodes` | Common regression when enumerating destructive DDL types. | Normal `ALTER TABLE` is covered. |
-| Replace `any(...)` with `all(...)` in `SQLScript.has_destructive()` | Plausible boolean aggregation bug. | Mixed safe + destructive multi-statement scripts are covered. |
-| Inspect only `self.statements[0]` | Realistic scope-reduction bug. | Destructive SQL after a safe prefix is covered. |
-| Inspect only `self.statements[-1]` | Realistic scope-reduction bug in the opposite direction. | Destructive SQL before a safe suffix is covered. |
-| Reverse fail-closed parse handling | High-value security regression. | Parse failures are tested as blocked. |
-| Execute SQL before returning the block response | Critical ordering/side-effect regression. | Tests assert `database.execute()` is not called. |
-| Call `has_mutation()` instead of `has_destructive()` | Similar helper name with different semantics. | Tests protect that DML like `INSERT` remains allowed. |
+## Lesson 3: Mutation count should scale to PR scope
 
-## Gap mutations
+Target ~2–3 mutations per critical guarantee. A PR touching 1 file with 2 guarantees needs 5–6 mutations. A PR touching 7 files with 7 guarantees needs ~15. Do not pad with redundant mutations that test the same assertion path.
 
-These survived and revealed meaningful missing coverage.
+## Lesson 4: Preprocessing omissions are high-value gap mutations
 
-| Mutation | Why it is good | Gap revealed |
-|---|---|---|
-| Skip Jinja rendering before destructive-DDL validation | Realistic preprocessing omission. | No test proves rendered template SQL is validated before execution. |
-| Use literal `"base"` instead of `database.db_engine_spec.engine` | Realistic wiring bug. | No test proves the real DB dialect is passed to `SQLScript`. |
-| Change Kusto `.drop` detection to `.drop ` | Realistic whitespace-sensitive prefix bug. | Kusto separator variants like `.drop\t...` and `.drop;` are not covered. |
-| Change Kusto `.alter` detection to `.alter ` | Same realistic separator issue for ALTER. | Kusto `.alter` separator variants are not covered. |
-| Remove `.lower()` from Kusto detection | Realistic normalization omission. | Mixed-case Kusto commands are not covered. |
-| Change ALTER `exp.Command` fallback comparison from `"ALTER"` to `"alter"` | Realistic case-sensitive fallback bug. | ALTER forms parsed as `exp.Command` are not covered. |
+Skipping a preprocessing step (template rendering, normalization, escaping, decoding) before a validation or output step is a realistic bug pattern. These mutations frequently survive because tests often feed pre-processed input directly, bypassing the pipeline. Prioritize these.
 
-These are good mutations because they are plausible, targeted, actionable, and tied directly to the PR's behavior.
+## Lesson 5: Wrong-wiring mutations catch integration blind spots
+
+Replacing a real dependency with a hardcoded default (e.g., using a literal string instead of the actual config value, or calling a similarly-named helper with different semantics) exposes whether tests verify the real integration path or just the logic in isolation.
+
+## Lesson 6: Scope-reduction and boundary mutations are underused
+
+Mutations that reduce scope (check only the first/last item instead of all, skip one member of an enum/list, change a boundary condition) reveal whether tests cover the full range of inputs. These are plausible regressions a developer might introduce and are often missed by line-coverage-only analysis.
 
 ---
 
-# Good Mutation Examples from PR #3
+# What Makes a Good Mutation
 
-PR #3 added SQL identifier escaping to 7 database engine specs.
+Good mutations are **plausible** (a developer could realistically introduce this regression), **targeted** (tied to the PR's critical guarantees), **actionable** (a surviving mutation points to a specific missing test), and **non-duplicative** (each mutation tests a different assertion path).
 
-Critical guarantees:
+## Strength mutation patterns (expected to be killed)
 
-- Escape double-quote delimiters in Postgres, DB2, StarRocks, GSheets
-- Escape backtick delimiters in Databricks, Hive, BigQuery
-- Escape LIKE wildcards (%, _) in Hive df_to_sql
-
-## Strength mutations (killed — 11/15)
-
-| Mutation | What it proved |
+| Pattern | Example |
 |---|---|
-| Postgres: skip double-quote escaping in search_path | `test_get_prequeries` verifies escaped output |
-| DB2: skip double-quote escaping in current_schema | `test_get_prequeries` verifies escaped output |
-| Databricks: skip backtick escaping for catalog | `test_get_prequeries` checks `USE CATALOG` escaping |
-| Databricks: skip backtick escaping for schema | `test_get_prequeries` checks `USE SCHEMA` escaping |
-| StarRocks: skip double-quote escaping in EXECUTE AS | `test_impersonation_username` verifies |
-| Hive: skip backtick escaping in SHOW VIEWS | `test_get_view_names_escapes_schema` verifies |
-| Hive: skip LIKE wildcard escaping in df_to_sql | `test_df_to_sql_escapes_like_wildcards` verifies |
-| Hive: remove ESCAPE clause | Same test checks for ESCAPE keyword |
-| Hive: skip table escaping in _partition_query | `test_partition_query_escapes_identifiers` verifies |
-| Hive: skip schema escaping in _partition_query | Same partition test verifies |
-| Postgres: invert early return condition | `test_get_prequeries` catches inverted logic |
+| Remove item from validation/denylist | Remove one entry from a blocklist, enum, or AST-node set |
+| Invert boolean aggregation | `any(...)` → `all(...)`, or `==` → `!=` |
+| Reverse fail-closed error handling | Allow operation to proceed on parse/validation error |
+| Wrong execution order | Execute side effect before guard/validation check |
+| Scope reduction — opposite ends | Check only first item vs. check only last item |
+| Wrong helper with similar name | Call a broader/narrower function with different semantics |
 
-## Gap mutations (survived — 4/15, all fixed)
+## Gap mutation patterns (may survive, revealing missing coverage)
 
-| Mutation | Gap revealed | Fix |
-|---|---|---|
-| BigQuery: skip schema escaping in `_information_schema_ref` | No test for backtick escaping in BigQuery schema | Added `test_information_schema_ref_escapes_backticks` |
-| BigQuery: skip catalog escaping in `_information_schema_ref` | No test for backtick escaping in BigQuery catalog | Same test covers both |
-| GSheets: skip double-quote escaping in GET_METADATA | No test for `get_extra_table_metadata` escaping | Added `test_get_extra_table_metadata_escapes_quotes` |
-| Hive: skip schema escaping in df_to_sql SHOW TABLES | No test for schema backtick escaping in df_to_sql | Added `test_df_to_sql_escapes_schema_backticks` |
-
-### Lessons learned from PR #3 run
-
-1. **Pre-existing failures poison results.** A pre-existing `test_parameters_json_schema` failure in Databricks was unrelated to the PR. Using `pytest -x` caused the runner to stop at this failure for every mutation, falsely reporting 100% kill rate when the real rate was 73%. Always run the full suite without `-x` and deselect pre-existing failures.
-
-2. **Coverage-only improvements were missed.** The agent only fixed surviving mutations but didn't review `term-missing` output to find other uncovered PR-changed lines. The BigQuery tests, for example, tested `get_materialized_view_names` but never verified that escaped identifiers appeared in the SQL query.
-
-3. **Mutation count should scale to scope.** 15 mutations across 7 files with ~7 critical guarantees was appropriate (~2 per guarantee). A PR touching 1 file would need fewer.
+| Pattern | Example |
+|---|---|
+| Skip preprocessing step | Skip template rendering, escaping, normalization, or decoding before validation |
+| Hardcode a dependency | Replace dynamic config/dialect/context with a literal default |
+| Whitespace/separator sensitivity | Change detection from `.drop` to `.drop ` (trailing space) |
+| Case sensitivity omission | Remove `.lower()` or `.upper()` from a comparison |
+| Partial list/enum coverage | Remove one member from an exhaustive match |
+| Boundary condition shift | Change `>=` to `>`, or `<` to `<=` |
 
 ---
 
@@ -834,3 +802,23 @@ Report style:
 - Use markdown tables and GitHub `<details>` accordions.
 - Keep the summary minimal and at-a-glance.
 ```
+
+---
+
+# Knowledge Base Contribution
+
+After completing the mutation testing workflow (all phases through Report), add a knowledge note to the Devin knowledge base summarizing how to run mutation tests on this repository. This serves two purposes: it helps future Devin sessions run mutation tests without re-discovering the setup, and it demonstrates that the agent can synthesize operational knowledge from its work.
+
+Use the Devin MCP `create_knowledge_note` tool to create a note with:
+
+- **Name**: `Mutation testing runbook — <repo_name>`
+- **Scope**: Retrieved when working on testing, coverage, or mutation testing tasks in this repository.
+- **Body** containing:
+  1. The targeted test command used (e.g., `pytest <paths> --deselect <known failures> -q`).
+  2. The coverage command used (e.g., `pytest <paths> --cov=<modules> --cov-report=term-missing --cov-branch -q`).
+  3. Any environment setup required (dependency installs, virtualenv activation, test database, etc.).
+  4. Known pre-existing test failures that should be deselected.
+  5. Mutation testing conventions: log file location (`.devin/mutation-testing/`), template files used, commit message format.
+  6. Any repo-specific quirks discovered during the run (e.g., slow test suites, flaky tests, import issues).
+
+Keep the note concise and actionable — a future agent should be able to run mutation tests on a new PR using only this note and the handoff instructions.
