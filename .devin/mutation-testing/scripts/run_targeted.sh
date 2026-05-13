@@ -16,10 +16,11 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# run_targeted.sh — Activate the project venv, export required env vars, and
-# run pytest against a focused set of test paths. This is the canonical entry
-# point that mutation_runner.py invokes for every mutation, so each mutation
-# run is byte-identical to every other run except for the patched source file.
+# run_targeted.sh — Canonical pytest wrapper for mutation testing.
+#
+# Activates the project venv, exports required env vars, applies
+# PR-specific deselections, and runs pytest. Used by mutation_runner.py
+# for every mutation run so the environment is byte-identical each time.
 #
 # Usage:
 #     ./.devin/mutation-testing/scripts/run_targeted.sh <pytest-args...>
@@ -28,17 +29,13 @@
 #     ./.devin/mutation-testing/scripts/run_targeted.sh \
 #         tests/unit_tests/sql/parse_tests.py -q
 #
-# Why this script exists:
-#     - Superset's MCP service transitively imports key_value, which eagerly
-#       runs beartype.claw.beartype_this_package() and trips a circular
-#       import. We export PY_KEY_VALUE_DISABLE_BEARTYPE=true (paired with the
-#       patch applied by setup_env.sh) to suppress that.
-#     - The venv must be sourced before pytest, otherwise the system Python
-#       is used and modules are missing.
-#     - Pre-existing test failures unrelated to the PR can be deselected via
-#       the DEVIN_PYTEST_DESELECT env var (newline- or comma-separated).
+# Environment variables:
+#     PY_KEY_VALUE_DISABLE_BEARTYPE  Suppress beartype circular-import crash
+#                                    (default: true).
+#     DEVIN_PYTEST_DESELECT          Newline- or comma-separated test IDs to
+#                                    deselect (pre-existing failures).
 #
-# Exit code: pytest's exit code (0 on success, non-zero on failure).
+# Exit code: pytest's exit code.
 
 set -uo pipefail
 

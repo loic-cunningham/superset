@@ -16,66 +16,35 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-render_pr_comment.py — Render the Stage 3 PR comment (`template_03_final_report.md`)
-from a structured JSON results blob.
+render_pr_comment.py — Render the Stage 3 PR comment from structured JSON.
 
-This script exists to eliminate the class of bugs where a hand-written ~20 KB
-PR comment silently drops a required section or accidentally uses a stale
-format. The single source of truth is a small JSON results file that the
-agent assembles from `mutation_runner.py`, `coverage_summary.py`, and its own
-notes. The renderer turns that into the exact markdown shape mandated by
-`template_03_final_report.md`.
+Produces the exact markdown shape mandated by ``template_03_final_report.md``
+from a single JSON results file assembled from ``mutation_runner.py``,
+``coverage_summary.py``, and agent notes.
 
-Input JSON shape (see `_validate` for the canonical schema):
+Input JSON shape (see ``_validate`` for the canonical schema)::
 
     {
-      "feature_or_pr_title": "Block destructive DDL in execute_sql",
-      "targeted_suite_description": "<paths joined by '+'>",
-      "mode": "final",  // or "checkpoint"
-      "log_path": ".devin/mutation-testing/pr-15-...md",
-
-      "initial": {
-        "passed_tests": 560, "failed_tests": 0,
-        "line_pct": 95, "branch_pct": 94,
-        "killed": 12, "survived": 4, "total": 16
-      },
-      "final": {                              // optional in checkpoint mode
-        "passed_tests": 571, "failed_tests": 0,
-        "line_pct": 95, "branch_pct": 94,
-        "killed": 16, "survived": 0, "total": 16
-      },
-
-      "surviving": [                          // remaining uncaught after fixes
-        {"name": "...", "gap": "...", "mutation": "...", "risk": "...",
-         "ja": {"name": "...", "gap": "...", "mutation": "...",
-                "risk": "..."}}
-      ],
-      "caught": [                             // every caught/newly-fixed mutation
-        {"name": "...", "explanation": "...", "caught_by": "...",
-         "newly_fixed": true,
-         "ja": {"name": "...", "explanation": "...", "caught_by": "..."}}
-      ],
-      "changes": [                            // changes made
-        {"area": "...", "change": "...", "result": "...",
-         "ja": {"area": "...", "change": "...", "result": "..."}}
-      ],
-      "gaps": [                               // what's left for high-quality coverage
-        {"area": "...", "test": "...", "reason": "...",
-         "ja": {"area": "...", "test": "...", "reason": "..."}}
-      ],
-
-      "summary": "...",                       // English summary
-      "test_quality": "...",                  // one-line at-a-glance comment
-      "notes": ["...", "..."],                // bulleted notes
-
-      "ja": {                                 // Japanese mirror
-        "summary": "...",
-        "test_quality": "...",
-        "notes": ["...", "..."]
-      }
+      "feature_or_pr_title": str,
+      "targeted_suite_description": str,
+      "mode": "final" | "checkpoint",
+      "log_path": str,
+      "initial": {"passed_tests", "failed_tests", "line_pct",
+                  "branch_pct", "killed", "survived", "total"},
+      "final":   { ... same keys ... },       // optional in checkpoint mode
+      "surviving": [{"name", "gap", "mutation", "risk", "ja": {...}}],
+      "caught":    [{"name", "explanation", "caught_by",
+                     "newly_fixed": bool, "ja": {...}}],
+      "changes":   [{"area", "change", "result", "ja": {...}}],
+      "gaps":      [{"area", "test", "reason", "ja": {...}}],
+      "summary": str,
+      "test_quality": str,
+      "notes": [str],
+      "ja": {"summary", "test_quality", "notes": [str]}
     }
 
-Usage:
+Usage::
+
     render_pr_comment.py results.json [--out comment.md]
 """
 

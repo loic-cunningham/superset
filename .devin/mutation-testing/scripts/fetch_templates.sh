@@ -16,28 +16,18 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# fetch_templates.sh — Download the mutation-testing templates and the agent
-# handoff doc from the origin/master branch into a local cache directory.
+# fetch_templates.sh — Fetch mutation-testing templates from the default branch.
 #
-# Templates live under `.devin/docs/` on master, but a PR branch under test
-# may not contain them (and we never want a PR branch's local copy to drift
-# from what master enforces). This script fetches them fresh each run.
-#
-# Files fetched:
-#   - .devin/docs/mutation_testing_agent_handoff.md
-#   - .devin/docs/template_01_test_foundation.md
-#   - .devin/docs/template_01_test_foundation.example.md
-#   - .devin/docs/template_02_mutation_testing.md
-#   - .devin/docs/template_02_mutation_testing.example.md
-#   - .devin/docs/template_03_final_report.md
-#   - .devin/docs/template_03_final_report.example.md
+# Templates live under `.devin/docs/` on master. PR branches under test may
+# not contain them, and local copies should not drift from what master
+# enforces. This script fetches them fresh into a cache directory.
 #
 # Usage:
 #     ./.devin/mutation-testing/scripts/fetch_templates.sh [destination-dir]
 #
 # Default destination: /tmp/mutation-testing-templates/
 #
-# Exit code: 0 on success, non-zero if `git fetch` or `git show` fails.
+# Exit code: 0 on success, non-zero if git fetch or git show fails.
 
 set -euo pipefail
 

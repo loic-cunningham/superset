@@ -62,7 +62,7 @@ Success means:
 - If no meaningful gaps are found and coverage is already acceptable, the improve step is a no-op; still log, verify, commit the log, and report.
 - Pre-existing test failures must be identified and excluded via `--deselect`, never counted as mutation kills.
 
-### Mandatory template compliance
+### Mandatory Template Compliance
 
 All structured outputs MUST follow the corresponding template files exactly. These are the **only** valid formats for GitHub comments and repo-tracked logs produced by this workflow. Do not create custom formats, simplified versions, or alternative layouts.
 
@@ -74,7 +74,7 @@ All structured outputs MUST follow the corresponding template files exactly. The
 
 Every section, table, accordion, and JA translation block defined in the template must appear in the output. If a section is not applicable (e.g., no remaining uncaught mutations), follow the template's specific guidance for that case — do not omit the section. Refer to the `.example.md` companion files for concrete examples of correctly filled templates.
 
-## Reusable tooling
+## Reusable Tooling
 
 The mutation-testing lifecycle has a small set of scripts under `.devin/mutation-testing/scripts/`. Use them at the phases listed below — do not roll your own bash/heredoc/Python equivalents. See `.devin/mutation-testing/README.md` for the full reference.
 
@@ -274,7 +274,7 @@ Run baseline (use the canonical wrapper, not bare `pytest`):
 ./.devin/mutation-testing/scripts/run_targeted.sh <targeted tests> -q
 ```
 
-### Handling baseline failures
+### Handling Baseline Failures
 
 If baseline fails:
 
@@ -416,7 +416,7 @@ Include both:
 1. **Gap mutations** (primary focus) — plausible regressions targeting identified weak spots; these are expected to have a real chance of surviving and reveal missing behavioral coverage.
 2. **Strength mutations** (secondary) — expected to be killed; included as sanity checks to confirm critical protections exist. Keep these to a minimum.
 
-### Good mutation categories (ordered by typical breaking likelihood)
+### Good Mutation Categories (Ordered by Typical Breaking Likelihood)
 
 | Category | Examples | Typical breaking likelihood |
 |---|---|---|
@@ -773,7 +773,7 @@ Good mutations are **impactful** (surviving reveals a meaningful test gap, not a
 
 **The best mutation is one that survives.** A 100% kill rate on the initial run does not mean the mutations were good — it may mean they were too easy. If every mutation is trivially caught, the mutation set failed to probe the real weaknesses. Aim for an initial kill rate of 50–80%; this indicates the mutations are genuinely testing coverage boundaries.
 
-## High-value mutation patterns (most likely to survive and reveal real gaps)
+## High-Value Mutation Patterns
 
 | Pattern | Example | Why it's high-value |
 |---|---|---|
@@ -786,7 +786,7 @@ Good mutations are **impactful** (surviving reveals a meaningful test gap, not a
 | Output contract violation | Omit a required field from a return dict, change ordering of results | Downstream consumers depend on shape, but tests often only check partial structure |
 | Implicit ordering dependency | Execute side effect before its guard, reorder pipeline stages | Ordering is implicit and almost never directly asserted |
 
-## Lower-value mutation patterns (use sparingly as sanity checks)
+## Lower-Value Mutation Patterns
 
 | Pattern | Example | Why it's lower-value |
 |---|---|---|
@@ -796,7 +796,7 @@ Good mutations are **impactful** (surviving reveals a meaningful test gap, not a
 
 ---
 
-# Mutation selection priorities (ordered by breaking likelihood — design from top down)
+# Mutation Selection Priorities (Ordered by Breaking Likelihood)
 
 1. skipped preprocessing/rendering/normalization/escaping (highest chance of surviving)
 2. hardcoded dependency replacing dynamic config/dialect/context

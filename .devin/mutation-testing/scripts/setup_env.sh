@@ -16,27 +16,21 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# setup_env.sh — Prepare the local Python environment for running mutation
-# testing on this Superset checkout.
+# setup_env.sh — Prepare the local Python environment for mutation testing.
 #
-# What this script does (idempotent):
-#   1. Installs the system-level C build dependencies that Superset's wheels
-#      need (mysqlclient, python-ldap).
-#   2. Ensures a `.venv` exists at the repo root and installs the development
-#      requirements with `uv` if available, falling back to plain `pip`.
-#   3. Patches the `key_value` package's eager `beartype.claw.beartype_this_package`
-#      call so it can be disabled via the `PY_KEY_VALUE_DISABLE_BEARTYPE` env var.
-#      Without this patch, importing Superset's MCP modules can fail with a
-#      `claw_state` circular import.
-#   4. Upgrades `nh3` past 0.2.x because older builds fail to initialize twice
-#      under recent CPython.
+# Idempotent steps:
+#   1. Install system C build dependencies (mysqlclient, python-ldap).
+#   2. Create `.venv` at repo root; install dev requirements via uv or pip.
+#   3. Patch key_value's eager beartype.claw call to honor
+#      PY_KEY_VALUE_DISABLE_BEARTYPE (avoids circular-import crash).
+#   4. Upgrade nh3 past 0.2.x (PyO3 re-init crash on newer CPython).
 #
 # Usage:
 #     ./.devin/mutation-testing/scripts/setup_env.sh
 #
 # Exit codes:
 #     0 — environment is ready
-#     non-zero — one of the steps failed; details printed to stderr
+#     non-zero — a step failed; details printed to stderr
 
 set -euo pipefail
 
@@ -97,8 +91,7 @@ ensure_venv() {
 }
 
 install_python_deps() {
-    # Only install if pytest isn't importable; mutation testing only needs the
-    # development requirements, not a full app install.
+    # Skip if pytest is already importable — dev requirements are sufficient.
     if python -c "import pytest" 2>/dev/null; then
         log "python dependencies appear to be installed (pytest importable)"
         return
