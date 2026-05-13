@@ -36,6 +36,7 @@ to score against.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -219,8 +220,18 @@ def test_request_body_documents_four_keys(workflow_text: str) -> None:
 
 
 def test_failure_paths_use_set_failed(workflow_text: str) -> None:
-    # Missing template, missing secrets, timeout, non-OK response.
+    # Missing template, missing secrets, timeout, network error, non-OK response.
     assert workflow_text.count("core.setFailed") >= 4
+
+
+def test_secret_presence_guard_present(workflow_text: str) -> None:
+    # The literal guard block must be there — counting `setFailed` alone
+    # is too loose because the workflow has multiple failure paths.
+    assert "if (!apiKey || !orgId) {" in workflow_text
+    assert (
+        "DEVIN_API_KEY and DEVIN_ORG_ID repository secrets are required."
+        in workflow_text
+    )
 
 
 def test_session_url_added_to_run_summary(workflow_text: str) -> None:
@@ -229,6 +240,90 @@ def test_session_url_added_to_run_summary(workflow_text: str) -> None:
         in workflow_text
     )
     assert "core.summary" in workflow_text
+
+
+# ---------------------------------------------------------------------------
+# Workflow — pinned action versions and inline-JS invariants
+# ---------------------------------------------------------------------------
+
+_PINNED_USES_RE = re.compile(
+    r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+@(v\d+|[0-9a-f]{40})$"
+)
+_FLOATING_REFS = {"main", "master", "latest", "HEAD"}
+
+
+def test_actions_are_pinned_to_specific_versions(workflow_job: dict) -> None:
+    # Every step that uses an external action must be pinned to either a
+    # SHA (40 hex chars) or a major version (`@vN`). Floating refs like
+    # `@main` / `@latest` would introduce supply-chain drift.
+    uses_values = [step["uses"] for step in workflow_job["steps"] if "uses" in step]
+    assert uses_values, "expected at least one step to use an external action"
+    for uses in uses_values:
+        ref = uses.rsplit("@", 1)[-1] if "@" in uses else ""
+        assert ref not in _FLOATING_REFS, (
+            f"unpinned action ref: {uses!r} — floating refs are forbidden"
+        )
+        assert _PINNED_USES_RE.match(uses), (
+            f"action {uses!r} is not pinned to @vN or a 40-char SHA"
+        )
+
+
+def test_request_body_contains_required_tags(workflow_text: str) -> None:
+    # The Devin session tags array is the dashboard's index across runs.
+    # Each documented tag must be present in the workflow source.
+    for tag in (
+        "'github-actions',",
+        "'mutation-testing',",
+        "'cron-distill',",
+        "`repo-${context.repo.owner}-${context.repo.repo}`,",
+    ):
+        assert tag in workflow_text, f"missing required session tag: {tag!r}"
+
+
+def test_session_title_capped_at_80_chars(workflow_text: str) -> None:
+    # `.slice(0, 80)` is the cap applied to the constructed title — the
+    # Devin Sessions API rejects overlong titles. A regression to a higher
+    # cap (e.g. `.slice(0, 800)`) silently produces 4xx responses.
+    assert ".slice(0, 80)" in workflow_text
+
+
+def test_session_title_uses_iso_date_yyyy_mm_dd(workflow_text: str) -> None:
+    # Title date must be `YYYY-MM-DD` (10 chars). Truncating to 8 chars
+    # collapses the day component and breaks dashboard groupings.
+    assert ".toISOString().slice(0,10)" in workflow_text
+
+
+def test_devin_api_url_encodes_org_id(workflow_text: str) -> None:
+    # Org IDs containing `/` or `?` would be treated as URL syntax without
+    # `encodeURIComponent`; the request would route to the wrong endpoint.
+    assert (
+        "https://api.devin.ai/v3/organizations/${encodeURIComponent(orgId)}/sessions"
+        in workflow_text
+    )
+
+
+def _step_by_name(job: dict, name: str) -> dict:
+    for step in job["steps"]:
+        if step.get("name") == name:
+            return step
+    raise AssertionError(f"step {name!r} not found")
+
+
+def test_build_prompt_step_gated_on_log_count(workflow_job: dict) -> None:
+    step = _step_by_name(workflow_job, "Build distillation prompt")
+    assert step.get("if") == "steps.inventory.outputs.log_count != '0'"
+
+
+def test_create_session_step_gated_on_log_count(workflow_job: dict) -> None:
+    step = _step_by_name(workflow_job, "Create Devin session")
+    assert step.get("if") == "steps.inventory.outputs.log_count != '0'"
+
+
+def test_inventory_step_prints_each_log_file_name(workflow_job: dict) -> None:
+    inventory = _step_by_name(workflow_job, "Inventory committed PR logs")
+    # Per-file echo line must survive — the run summary depends on it for
+    # operator-visible debugging of which files were distilled.
+    assert 'printf \'  %s\\n\' "${logs[@]}"' in inventory["run"]
 
 
 # ---------------------------------------------------------------------------
